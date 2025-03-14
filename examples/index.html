@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sylph框架示例中心</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        h1 {
+            font-size: 2.5rem;
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #6c757d;
+        }
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        .example-card {
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 25px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .example-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .example-card h2 {
+            font-size: 1.5rem;
+            color: #0066cc;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 8px;
+        }
+        .example-card .description {
+            color: #495057;
+            margin-bottom: 20px;
+        }
+        .features {
+            margin-bottom: 20px;
+        }
+        .features h3 {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        .features ul {
+            list-style-type: none;
+            padding-left: 5px;
+        }
+        .features li {
+            margin-bottom: 5px;
+            position: relative;
+            padding-left: 25px;
+        }
+        .features li:before {
+            content: "✓";
+            color: #28a745;
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+        }
+        .cta {
+            margin-top: 15px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 15px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            margin-left: 10px;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+        .learning-path {
+            margin-top: 40px;
+            padding: 20px;
+            background-color: #e9f7fe;
+            border-radius: 6px;
+            border-left: 5px solid #0066cc;
+        }
+        .learning-path h2 {
+            color: #0066cc;
+            margin-bottom: 15px;
+        }
+        .learning-path ol {
+            padding-left: 30px;
+        }
+        .learning-path li {
+            margin-bottom: 10px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sylph框架示例中心</h1>
+            <p class="subtitle">探索框架的各种功能和用法，加速你的应用开发</p>
+        </header>
+
+        <div class="examples-grid">
+            <div class="example-card">
+                <h2>HTTP服务</h2>
+                <p class="description">展示如何使用Sylph框架构建RESTful API服务，包括路由配置、中间件、请求处理和响应构建。</p>
+                <div class="features">
+                    <h3>核心特性:</h3>
+                    <ul>
+                        <li>Gin集成</li>
+                        <li>中间件实现</li>
+                        <li>RESTful API设计</li>
+                        <li>事件系统</li>
+                        <li>结构化日志</li>
+                    </ul>
+                </div>
+                <div class="cta">
+                    <a href="./http_server" class="btn">查看示例</a>
+                    <a href="./http_server/README.md" class="btn btn-secondary">阅读文档</a>
+                </div>
+            </div>
+
+            <div class="example-card">
+                <h2>消息队列</h2>
+                <p class="description">演示如何使用Sylph框架集成RocketMQ进行消息的生产和消费，实现异步通信和解耦。</p>
+                <div class="features">
+                    <h3>核心特性:</h3>
+                    <ul>
+                        <li>RocketMQ集成</li>
+                        <li>消息生产者和消费者</li>
+                        <li>消息序列化和反序列化</li>
+                        <li>错误处理</li>
+                        <li>事件通知</li>
+                    </ul>
+                </div>
+                <div class="cta">
+                    <a href="./mq_usage" class="btn">查看示例</a>
+                    <a href="./mq_usage/README.md" class="btn btn-secondary">阅读文档</a>
+                </div>
+            </div>
+
+            <div class="example-card">
+                <h2>定时任务</h2>
+                <p class="description">展示如何使用Sylph框架创建和管理定时任务，实现周期性任务执行。</p>
+                <div class="features">
+                    <h3>核心特性:</h3>
+                    <ul>
+                        <li>多种时间表达式定义任务</li>
+                        <li>任务状态监控</li>
+                        <li>动态调整任务频率</li>
+                        <li>错误处理和告警</li>
+                        <li>HTTP接口查询状态</li>
+                    </ul>
+                </div>
+                <div class="cta">
+                    <a href="./cron_jobs" class="btn">查看示例</a>
+                    <a href="./cron_jobs/README.md" class="btn btn-secondary">阅读文档</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="learning-path">
+            <h2>推荐学习路径</h2>
+            <ol>
+                <li>首先查看 <strong>HTTP服务</strong> 示例，了解框架的基本使用方法</li>
+                <li>然后查看 <strong>定时任务</strong> 示例，了解如何管理周期性任务</li>
+                <li>最后查看 <strong>消息队列</strong> 示例，学习如何处理异步消息通信</li>
+            </ol>
+        </div>
+
+        <footer>
+            <p>© 2023 Sylph框架 - 高性能Go微服务框架</p>
+            <p>问题反馈请访问 <a href="https://github.com/sylphbyte/sylph">GitHub仓库</a></p>
+        </footer>
+    </div>
+</body>
+</html> 
