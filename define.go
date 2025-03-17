@@ -8,11 +8,12 @@ import (
 	"os"
 	"runtime"
 	"strings"
-
-	jsoniter "github.com/json-iterator/go"
 )
 
+// ITaskName 定义任务名接口
+// 用于在消息队列中标识不同的任务类型
 type ITaskName interface {
+	// Name 返回任务的名称字符串
 	Name() string
 }
 
@@ -27,15 +28,6 @@ func init() {
 type Roboter interface {
 	Send(text string) error
 }
-
-var (
-	_json = jsoniter.Config{
-		EscapeHTML:             true,
-		SortMapKeys:            true,
-		ValidateJsonRawMessage: true,
-		UseNumber:              true,
-	}.Froze()
-)
 
 type IStringer interface {
 	String() string

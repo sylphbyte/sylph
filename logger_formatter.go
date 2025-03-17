@@ -3,9 +3,11 @@ package sylph
 import (
 	"bytes"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"os"
 	"runtime"
+	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -16,6 +18,26 @@ const (
 type XLoggerFormatter struct {
 	TimestampFormat string
 	PrettyPrint     bool
+	// 添加对象池以减少内存分配
+	bufferPool sync.Pool
+}
+
+// 初始化对象池
+func (f *XLoggerFormatter) getBuffer() *bytes.Buffer {
+	if f.bufferPool.New == nil {
+		f.bufferPool.New = func() interface{} {
+			return bytes.NewBuffer(make([]byte, 0, 1024)) // 预分配合理大小的缓冲区
+		}
+	}
+
+	buf := f.bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	return buf
+}
+
+// 返回buffer到对象池
+func (f *XLoggerFormatter) putBuffer(buf *bytes.Buffer) {
+	f.bufferPool.Put(buf)
 }
 
 func (f *XLoggerFormatter) takeMessage(entry *logrus.Entry) *LoggerMessage {
@@ -50,14 +72,12 @@ func (f *XLoggerFormatter) makeMessageData(message *LoggerMessage) *LoggerFormat
 	return message.MakeLoggerFormatMessage()
 }
 
-func (f *XLoggerFormatter) makeJsonContent(data *LoggerFormatMessage) (serialized []byte, err error) {
+func (f *XLoggerFormatter) makeJsonContent(data *LoggerFormatMessage) ([]byte, error) {
 	if !f.PrettyPrint {
-		serialized, err = _json.Marshal(data)
-		return
+		return _json.Marshal(data) // _json 已经是线程安全的 Froze() 实例
 	}
 
-	serialized, err = _json.MarshalIndent(data, "", "  ")
-	return
+	return _json.MarshalIndent(data, "", "  ")
 }
 
 // Format 实现 logrus.Formatter 接口
@@ -84,7 +104,8 @@ func (f *XLoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		}
 	}()
 
-	data := make(logrus.Fields)
+	// 预分配合理大小的 map，减少扩容操作
+	data := make(logrus.Fields, len(entry.Data))
 	message := f.takeMessage(entry)
 
 	logMessage := f.makeMessageData(message)
@@ -98,17 +119,41 @@ func (f *XLoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		return nil, err
 	}
 
-	ts := entry.Time.Format(f.TimestampFormat)
-	buf := bytes.NewBuffer([]byte(ts))
+	// 使用对象池中的buffer
+	buf := f.getBuffer()
+	defer f.putBuffer(buf)
+
+	// 预估字符串长度，减少内存重分配
+	buf.WriteString(entry.Time.Format(f.TimestampFormat))
 	buf.WriteByte(' ')
-	buf.WriteString(fmt.Sprintf("[%s-%s]", message.Header.Endpoint.String(), entry.Level.String()))
+
+	// 使用 WriteString 代替 fmt.Sprintf 减少内存分配
+	buf.WriteByte('[')
+	if message != nil && message.Header != nil {
+		buf.WriteString(string(message.Header.Endpoint))
+	}
+	buf.WriteByte('-')
+	buf.WriteString(entry.Level.String())
+	buf.WriteByte(']')
+
 	buf.WriteByte(' ')
-	buf.WriteString(fmt.Sprintf("<%s>", message.Location))
+	buf.WriteByte('<')
+	if message != nil {
+		buf.WriteString(message.Location)
+	}
+	buf.WriteByte('>')
 	buf.WriteByte(' ')
-	buf.WriteString(message.Message)
+
+	if message != nil {
+		buf.WriteString(message.Message)
+	}
 	buf.WriteByte(' ')
 	buf.Write(serialized)
 	buf.WriteByte('\n')
 
-	return buf.Bytes(), nil
+	// 创建一个新的字节切片，避免buffer被回收后数据被覆盖
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+
+	return result, nil
 }

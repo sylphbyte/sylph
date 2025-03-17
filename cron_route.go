@@ -56,4 +56,4 @@ type TaskConfig struct {
 
 }
 
-type TaskHandler func(ctx context.Context) error
+type TaskHandler func(ctx Context) error

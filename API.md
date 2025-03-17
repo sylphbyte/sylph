@@ -16,9 +16,9 @@
 ### 接口定义
 
 ```go
-// Context 核心上下文接口，继承标准库context.Context，并扩展多种功能
+// Context 核心上下文接口，继承标准库Context，并扩展多种功能
 type Context interface {
-    context.Context     // 标准 context
+    Context     // 标准 context
     LogContext          // 日志功能
     DataContext         // 数据功能
     TakeHeader() IHeader // 获取请求头信息

@@ -2,17 +2,16 @@ package sylph
 
 import (
 	mq "github.com/apache/rocketmq-clients/golang/v5"
-	"sylph/pkg/json"
-	
+	"github.com/sylphbyte/pr"
 	"time"
 )
 
-type TransactionHandle func(ctcontext.Context.Context) error
+type TransactionHandle func(ctx Context) error
 
 type Tag string // 消息标签
 
 func NewSendMessage(val any) *SendMessage {
-	body, _ := json.Marshal(val)
+	body, _ := _json.Marshal(val)
 	return &SendMessage{
 		Body: body,
 		opts: &SendMessageOption{},
@@ -23,8 +22,8 @@ type SendMessageOption struct {
 	transactionHandle TransactionHandle
 	delayTime         time.Time
 
-	tag  Tag
-	keys []string
+	tag        Tag
+	keys       []string
 	properties map[string]string
 }
 

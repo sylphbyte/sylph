@@ -2,8 +2,47 @@ package sylph
 
 import (
 	"context"
+	"runtime"
+	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
+)
+
+// 全局初始化优化
+func init() {
+	// 设置适当的GOMAXPROCS以避免超订阅
+	cpus := runtime.NumCPU()
+	runtime.GOMAXPROCS(cpus)
+
+	// 调整GC参数，在高并发场景下平衡GC压力和内存使用
+	// 默认为100，增加这个值会减少GC频率但增加内存使用
+	debug.SetGCPercent(200)
+
+	// 为了减少GC暂停时间，可以设置较小的并行度
+	debug.SetMaxThreads(cpus * 2)
+}
+
+// 为常用的小对象添加对象池
+var (
+	mapPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[string]interface{}, 8)
+		},
+	}
+
+	// 获取一个预分配的map
+	GetMap = func() map[string]interface{} {
+		return mapPool.Get().(map[string]interface{})
+	}
+
+	// 归还map到池
+	ReleaseMap = func(m map[string]interface{}) {
+		for k := range m {
+			delete(m, k)
+		}
+		mapPool.Put(m)
+	}
 )
 
 // Lifecycle 资源生命周期管理接口
@@ -15,7 +54,7 @@ type Lifecycle interface {
 }
 
 // WithContextTimeout 使用超时上下文执行函数
-func WithContextTimeout(timeout time.Duration, fn func(ctcontext.Context.Context) error) error {
+func WithContextTimeout(timeout time.Duration, fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -58,7 +97,7 @@ func RecoverWithFunc(onPanic func(r interface{})) {
 }
 
 // RecoverGoroutine 在goroutine中捕获panic并记录
-func RecoverGoroutine(ctcontext.Context, location string) {
+func RecoverGoroutine(ctx Context, location string) {
 	if r := recover(); r != nil {
 		stack := takeStack()
 		ctx.Error(location, "goroutine panic", nil, H{
@@ -69,13 +108,14 @@ func RecoverGoroutine(ctcontext.Context, location string) {
 }
 
 // SafeGo 安全启动goroutine
-func SafeGo(ctcontext.Context, location string, fn func()) {
-	go func() {
-		defer RecoverGoroutine(ctx, location)
-		fn()
-	}()
-}
-
+//
+//	func SafeGo(ctx Context, location string, fn func()) {
+//		go func() {
+//			defer RecoverGoroutine(ctx, location)
+//			fn()
+//		}()
+//	}
+//
 // ExecuteWithRetry 带重试的执行函数
 func ExecuteWithRetry(attempts int, delay time.Duration, fn func() error) (err error) {
 	for i := 0; i < attempts; i++ {

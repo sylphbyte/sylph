@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/sylphbyte/pkg/pr"
+	"github.com/sylphbyte/pr"
 	"net/http"
 
 	"time"

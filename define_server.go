@@ -11,10 +11,8 @@ type Kind int
 
 const (
 	Gin    Name = "gin"
-	Echo   Name = "echo"
 	Cron   Name = "cron"
 	Rocket Name = "rocket"
-	Kafka  Name = "kafka"
 )
 
 type Name string

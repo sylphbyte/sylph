@@ -1,10 +1,10 @@
 package sylph
 
 import (
-	"github.com/sylphbyte/pkg/pr"
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/sylphbyte/pr"
 )
 
 var _ IConfigParser = (*Parser)(nil)

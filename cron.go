@@ -1,9 +1,8 @@
 package sylph
 
 import (
-	"github.com/sylphbyte/pkg/pr"
-
-	"time"
+	cron "github.com/robfig/cron/v3"
+	"github.com/sylphbyte/pr"
 )
 
 const (
@@ -70,7 +69,7 @@ type CronRouteHandlers struct {
 	Registry map[string]CrontabRouteFunc
 }
 
-func NewCrontab(ctx context.Context, mode CrontabMode, configs []TaskConfig) *Crontab {
+func NewCrontab(ctx Context, mode CrontabMode, configs []TaskConfig) *Crontab {
 	return &Crontab{
 		ctx:         ctx,
 		mode:        mode,
@@ -82,7 +81,7 @@ func NewCrontab(ctx context.Context, mode CrontabMode, configs []TaskConfig) *Cr
 }
 
 type Crontab struct {
-	ctx    context.Context
+	ctx    Context
 	mode   CrontabMode
 	opts   []cron.Option
 	logger cron.Logger
@@ -144,8 +143,8 @@ func (c *Crontab) bindSwitchedHandler() {
 		}
 
 		if _, ok := c.tasks[conf.Name]; !ok {
-			c.ctx.Warn("server.Crontab.bindSwitchedHandler", "crontab task not setting", x.H{
-				"name": conf.Name,
+			c.ctx.Warn("server.Crontab.bindSwitchedHandler", "crontab task not setting", H{
+				"task": conf.Name.Name(),
 			})
 
 			pr.Warning("Crontab task %s not setting\n", conf.Name)
@@ -169,9 +168,8 @@ func (c *Crontab) takeRunHandler(name TaskName) func() {
 		ctx.TakeHeader().GenerateTraceId()
 
 		if err := handler(ctx); err != nil {
-			ctx.Error("server.Crontab.takeRunHandler", "cron task run failed", err, x.H{
-				"name": name.Name(),
-				"ts":   time.Now().Format(time.DateTime),
+			ctx.Error("server.Crontab.takeRunHandler", "cron task run failed", err, H{
+				"task": name.Name(),
 			})
 		}
 	}
@@ -201,10 +199,10 @@ func (c *Crontab) Shutdown() error {
 }
 
 type cronLogger struct {
-	ctx context.Context
+	ctx Context
 }
 
-func newCronLogger(ctx context.Context) cron.Logger {
+func newCronLogger(ctx Context) cron.Logger {
 	return &cronLogger{ctx: ctx}
 }
 

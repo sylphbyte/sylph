@@ -2,6 +2,8 @@ package sylph
 
 import (
 	"fmt"
+	"sync"
+
 	mq "github.com/apache/rocketmq-clients/golang/v5"
 	"github.com/apache/rocketmq-clients/golang/v5/credentials"
 )
@@ -108,7 +110,8 @@ func (p *baseProducerRocket) makeClient() (err error) {
 		return
 	}
 
-	p.client, err = mq.NewProducer(p.instance.MakeConfig(), p.topic.TakeOptions()...)
+	// 从连接池获取或创建客户端
+	p.client, err = globalRocketPool.getOrCreateProducer(p.instance, p.topic)
 	return
 }
 
@@ -137,10 +140,8 @@ func (p *baseConsumerRocket) makeClient() (err error) {
 		return
 	}
 
-	conf := p.instance.MakeConfig()
-	conf.ConsumerGroup = p.consumer.Group
-
-	p.client, err = mq.NewSimpleConsumer(conf, p.consumer.TakeOptions()...)
+	// 从连接池获取或创建客户端
+	p.client, err = globalRocketPool.getOrCreateConsumer(p.instance, p.consumer)
 	return
 }
 
@@ -155,4 +156,95 @@ func (p *baseConsumerRocket) Boot() (err error) {
 
 	p.started = true
 	return p.client.Start()
+}
+
+// 客户端连接池实现
+type rocketClientPool struct {
+	sync.RWMutex
+	producers map[string]mq.Producer
+	consumers map[string]mq.SimpleConsumer
+}
+
+// 全局客户端连接池
+var globalRocketPool = &rocketClientPool{
+	producers: make(map[string]mq.Producer),
+	consumers: make(map[string]mq.SimpleConsumer),
+}
+
+// getOrCreateProducer 获取或创建生产者客户端
+func (p *rocketClientPool) getOrCreateProducer(instance RocketInstance, topic RocketTopic) (mq.Producer, error) {
+	key := MakeRocketId(topic, instance)
+
+	// 先尝试从池中获取
+	p.RLock()
+	if client, ok := p.producers[key]; ok {
+		p.RUnlock()
+		return client, nil
+	}
+	p.RUnlock()
+
+	// 不存在则创建新客户端（需要写锁）
+	p.Lock()
+	defer p.Unlock()
+
+	// 二次检查（双重检查锁定模式）
+	if client, ok := p.producers[key]; ok {
+		return client, nil
+	}
+
+	// 创建新客户端
+	client, err := mq.NewProducer(instance.MakeConfig(), topic.TakeOptions()...)
+	if err != nil {
+		return nil, err
+	}
+
+	// 保存到池中
+	p.producers[key] = client
+	return client, nil
+}
+
+// getOrCreateConsumer 获取或创建消费者客户端
+func (p *rocketClientPool) getOrCreateConsumer(instance RocketInstance, consumer RocketConsumer) (mq.SimpleConsumer, error) {
+	key := fmt.Sprintf("%s:%s", instance.Name, consumer.Group)
+
+	// 先尝试从池中获取
+	p.RLock()
+	if client, ok := p.consumers[key]; ok {
+		p.RUnlock()
+		return client, nil
+	}
+	p.RUnlock()
+
+	// 不存在则创建新客户端（需要写锁）
+	p.Lock()
+	defer p.Unlock()
+
+	// 二次检查
+	if client, ok := p.consumers[key]; ok {
+		return client, nil
+	}
+
+	// 创建新客户端
+	conf := instance.MakeConfig()
+	conf.ConsumerGroup = consumer.Group
+
+	client, err := mq.NewSimpleConsumer(conf, consumer.TakeOptions()...)
+	if err != nil {
+		return nil, err
+	}
+
+	// 保存到池中
+	p.consumers[key] = client
+	return client, nil
+}
+
+// closeAll 关闭所有客户端连接
+func (p *rocketClientPool) closeAll() {
+	p.Lock()
+	defer p.Unlock()
+
+	// 简单清空映射，让GC处理客户端资源
+	// 实际应用中如果有明确的关闭方法，应该在此调用
+	p.producers = make(map[string]mq.Producer)
+	p.consumers = make(map[string]mq.SimpleConsumer)
 }

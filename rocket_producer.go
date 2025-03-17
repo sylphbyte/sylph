@@ -1,7 +1,7 @@
 package sylph
 
 import (
-	"sylph/pkg/storage"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -11,14 +11,18 @@ var (
 		TopicKindDelay:       NewDelayProducer,
 		TopicKindTransaction: NewTransactionProducer,
 	}
+
+	ErrTransactionNoHandle = errors.New("transaction no handle")
 )
 
 type producerRegistryMapping map[TopicKind]producerHandler
 
 type producerHandler func(topic RocketTopic, instance RocketInstance) IProducer
 
+// IProducer RocketMQ生产者接口，增加批量发送方法
 type IProducer interface {
-	Send(ctcontext.Context.Context, message *SendMessage) *SendRet
+	Send(ctx Context, message *SendMessage) *SendRet
+	SendBatch(ctx Context, messages []*SendMessage) []*SendRet
 	Boot() error
 }
 
@@ -41,10 +45,27 @@ type NormalProducer struct {
 	*baseProducerRocket
 }
 
-func (n *NormalProducer) Send(ctcontext.Context.Context, message *SendMessage) *SendRet {
+func (n *NormalProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 
 	return NewSendRet(n.client.Send(ctx, msg))
+}
+
+// SendBatch 批量发送消息
+func (n *NormalProducer) SendBatch(ctx Context, messages []*SendMessage) []*SendRet {
+	if len(messages) == 0 {
+		return []*SendRet{}
+	}
+
+	// 预分配结果数组
+	results := make([]*SendRet, len(messages))
+
+	// 逐个发送（RocketMQ Go SDK可能不支持批量发送）
+	for i, message := range messages {
+		results[i] = n.Send(ctx, message)
+	}
+
+	return results
 }
 
 func NewDelayProducer(topic RocketTopic, instance RocketInstance) IProducer {
@@ -57,10 +78,27 @@ type DelayProducer struct {
 	*baseProducerRocket
 }
 
-func (n DelayProducer) Send(ctcontext.Context.Context, message *SendMessage) *SendRet {
+func (n DelayProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 	msg.SetDelayTimestamp(message.TakeDelayTime())
 	return NewSendRet(n.client.Send(ctx, msg))
+}
+
+// SendBatch 批量发送延迟消息
+func (n DelayProducer) SendBatch(ctx Context, messages []*SendMessage) []*SendRet {
+	if len(messages) == 0 {
+		return []*SendRet{}
+	}
+
+	// 预分配结果数组
+	results := make([]*SendRet, len(messages))
+
+	// 逐个发送
+	for i, message := range messages {
+		results[i] = n.Send(ctx, message)
+	}
+
+	return results
 }
 
 func NewFifoProducer(topic RocketTopic, instance RocketInstance) IProducer {
@@ -73,10 +111,27 @@ type FifoProducer struct {
 	*baseProducerRocket
 }
 
-func (n FifoProducer) Send(ctcontext.Context.Context, message *SendMessage) *SendRet {
+func (n FifoProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 	msg.SetDelayTimestamp(message.TakeDelayTime())
 	return NewSendRet(n.client.Send(ctx, msg))
+}
+
+// SendBatch 批量发送FIFO消息
+func (n FifoProducer) SendBatch(ctx Context, messages []*SendMessage) []*SendRet {
+	if len(messages) == 0 {
+		return []*SendRet{}
+	}
+
+	// 预分配结果数组
+	results := make([]*SendRet, len(messages))
+
+	// 逐个发送
+	for i, message := range messages {
+		results[i] = n.Send(ctx, message)
+	}
+
+	return results
 }
 
 func NewTransactionProducer(topic RocketTopic, instance RocketInstance) IProducer {
@@ -89,7 +144,7 @@ type TransactionProducer struct {
 	*baseProducerRocket
 }
 
-func (n TransactionProducer) Send(ctcontext.Context.Context, message *SendMessage) *SendRet {
+func (n TransactionProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 	msg.SetDelayTimestamp(message.TakeDelayTime())
 
@@ -102,7 +157,7 @@ func (n TransactionProducer) Send(ctcontext.Context.Context, message *SendMessag
 	handler := message.TakeTransactionHandle()
 	if handler == nil {
 		_ = transaction.RollBack()
-		return NewSendRet(nil, storage.ErrTransactionNoHandle)
+		return NewSendRet(nil, ErrTransactionNoHandle)
 	}
 
 	err = handler(ctx)
@@ -114,4 +169,14 @@ func (n TransactionProducer) Send(ctcontext.Context.Context, message *SendMessag
 
 	_ = transaction.Commit()
 	return NewSendRet(resp, nil)
+}
+
+// 事务消息不支持批量发送，实现空方法满足接口
+func (n TransactionProducer) SendBatch(ctx Context, messages []*SendMessage) []*SendRet {
+	// 对于事务消息，不支持批量发送，只能逐个发送
+	results := make([]*SendRet, len(messages))
+	for i, message := range messages {
+		results[i] = n.Send(ctx, message)
+	}
+	return results
 }

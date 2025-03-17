@@ -3,10 +3,27 @@ package sylph
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/pkg/errors"
+)
+
+// LogLevel 定义日志级别类型
+type LogLevel int
+
+// 日志级别常量定义
+const (
+	DebugLevel LogLevel = iota
+	InfoLevel
+	TraceLevel
+	WarnLevel
+	ErrorLevel
+	FatalLevel
+	PanicLevel
 )
 
 const (
@@ -42,13 +59,14 @@ type DataContext interface {
 }
 
 // Context 核心上下文接口
-// 继承标准库context.Context，并扩展多种功能
+// 继承标准库Context，并扩展多种功能
 type Context interface {
-	context.Context      // 标准 context
-	LogContext           // 日志功能
-	DataContext          // 数据功能
-	TakeHeader() IHeader // 获取请求头信息
-	Clone() Context      // 创建上下文副本
+	context.Context             // 标准 context
+	LogContext                  // 日志功能
+	DataContext                 // 数据功能
+	TakeHeader() IHeader        // 获取请求头信息
+	StoreHeader(header IHeader) // 设置请求头信息
+	Clone() Context             // 创建上下文副本
 
 	TakeLogger() ILogger // 获取日志记录器
 	//ReceiveDB(name string) *gorm.DB // 工厂
@@ -74,7 +92,45 @@ type Context interface {
 	SendInfo(title string, fields ...H)             // 发送信息通知
 }
 
-var _ Context = (*DefaultContext)(nil) // 确保DefaultContext实现了Context接口
+// 确保DefaultContext实现了Context接口
+var _ Context = (*DefaultContext)(nil)
+
+// DefaultContextPool 默认上下文对象池
+var defaultContextPool = sync.Pool{
+	New: func() interface{} {
+		return &DefaultContext{
+			ctxInternal: context.Background(),
+			dataCache:   make(map[string]interface{}, 16), // 增加初始容量，减少扩容
+			rwMutex:     sync.RWMutex{},                   // 预先初始化锁
+			activeTask:  0,
+		}
+	},
+}
+
+// recycleContext 回收上下文对象到池中
+// 清空数据但保留底层结构以减少内存分配
+func recycleContext(ctx *DefaultContext) {
+	if ctx == nil {
+		return
+	}
+
+	// 清空数据缓存但保留底层map结构
+	ctx.rwMutex.Lock()
+	for k := range ctx.dataCache {
+		delete(ctx.dataCache, k)
+	}
+	ctx.rwMutex.Unlock()
+
+	// 重置状态
+	ctx.Header = nil
+	ctx.logger = nil
+	ctx.event = nil
+	ctx.robotCache = nil
+	atomic.StoreInt32(&ctx.activeTask, 0)
+
+	// 放回池中
+	defaultContextPool.Put(ctx)
+}
 
 // NewDefaultContext 创建一个默认上下文实例
 // 参数:
@@ -84,42 +140,91 @@ var _ Context = (*DefaultContext)(nil) // 确保DefaultContext实现了Context�
 // 返回:
 //   - Context: 上下文实例
 func NewDefaultContext(endpoint Endpoint, path string) Context {
-	return &DefaultContext{
-		Context: context.Background(),
-		Header: &Header{
-			Endpoint:   endpoint,
-			PathVal:    path,
-			TraceIdVal: generateTraceId(),
-		},
-		logger: _loggerManager.Receive(string(endpoint)),
+	// 从对象池获取实例
+	ctx := defaultContextPool.Get().(*DefaultContext)
+
+	// 初始化必要字段
+	ctx.ctxInternal = context.Background()
+	header := &Header{
+		Endpoint:   endpoint,
+		PathVal:    path,
+		TraceIdVal: generateTraceId(),
 	}
+	ctx.StoreHeader(header)
+	ctx.logger = _loggerManager.Receive(string(endpoint))
+	ctx.event = nil // 懒加载
+	ctx.robotCache = nil
+
+	// 确保数据映射初始化
+	if ctx.dataCache == nil {
+		ctx.dataCache = make(map[string]interface{}, 8)
+	}
+	ctx.rwMutex = sync.RWMutex{}
+
+	return ctx
 }
 
 // DefaultContext 默认上下文实现
 type DefaultContext struct {
-	context.Context          // 内嵌标准库上下文
-	mapping         sync.Map // 键值存储
-	Header          *Header  `json:"header"` // 请求头信息
-	logger          ILogger  // 日志记录器
-	event           *event   // 事件系统
+	ctxInternal context.Context        // 内部上下文
+	dataCache   map[string]interface{} // 并发安全的键值存储，使用读写锁保护
+	rwMutex     sync.RWMutex           // 保护dataCache的读写锁
+	Header      *Header                `json:"header"` // 请求头信息
+	logger      ILogger                // 日志记录器
+	event       *event                 // 事件系统（懒加载）
+	robotCache  *H                     // 机器人通知缓存
+	activeTask  int32                  // 当前活跃任务计数（原子操作）
+}
+
+// Deadline 实现context.Context接口
+func (d *DefaultContext) Deadline() (deadline time.Time, ok bool) {
+	return d.ctxInternal.Deadline()
+}
+
+// Done 实现context.Context接口
+func (d *DefaultContext) Done() <-chan struct{} {
+	return d.ctxInternal.Done()
+}
+
+// Err 实现context.Context接口
+func (d *DefaultContext) Err() error {
+	return d.ctxInternal.Err()
+}
+
+// Value 实现context.Context接口
+func (d *DefaultContext) Value(key interface{}) interface{} {
+	return d.ctxInternal.Value(key)
 }
 
 // TakeHeader 获取请求头信息
 func (d *DefaultContext) TakeHeader() IHeader {
-	return d.Header
+	// 使用原子加载避免锁竞争
+	return (*Header)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&d.Header))))
 }
 
-// robotHeader 构建机器人通知的头部信息
-func (d *DefaultContext) robotHeader() (h H) {
+// robotHeader 构建机器人通知的头部信息（带缓存）
+func (d *DefaultContext) robotHeader() H {
+	// 使用缓存提高性能
+	if d.robotCache != nil {
+		return *d.robotCache
+	}
+
 	now := time.Now()
 	traceId := d.TakeHeader().TraceId()
 
-	h = H{
+	// 预先计算格式化字符串，减少格式化开销
+	timeStr := now.Format("200601/02")
+	hourStr := fmt.Sprintf("%d", now.Hour())
+
+	// 创建缓存并返回
+	h := H{
 		"Mark":    d.Header.MarkVal,
 		"TraceId": traceId,
-		"Command": fmt.Sprintf("grep %s /wider-logs/%s/%s.%d.*.log", traceId, now.Format("200601/02"), d.Header.Endpoint, now.Hour()),
+		"Command": "grep " + traceId + " /wider-logs/" + timeStr + "/" + string(d.Header.Endpoint) + "." + hourStr + ".*.log",
 	}
-	return
+
+	d.robotCache = &h
+	return h
 }
 
 // recover 恢复函数，用于捕获并处理panic
@@ -131,12 +236,11 @@ func (d *DefaultContext) recover() {
 	}
 }
 
-// takeEvent 获取事件系统，如果不存在则创建
+// takeEvent 获取事件系统，如果不存在则创建（懒加载）
 func (d *DefaultContext) takeEvent() *event {
 	if d.event == nil {
 		d.event = newEvent()
 	}
-
 	return d.event
 }
 
@@ -167,19 +271,59 @@ func (d *DefaultContext) AsyncEmitAndWait(eventName string, payload interface{})
 	d.takeEvent().AsyncEmit(d, eventName, payload)
 }
 
+// increaseActiveTask 增加活跃任务计数
+func (d *DefaultContext) increaseActiveTask() {
+	atomic.AddInt32(&d.activeTask, 1)
+}
+
+// decreaseActiveTask 减少活跃任务计数
+func (d *DefaultContext) decreaseActiveTask() {
+	atomic.AddInt32(&d.activeTask, -1)
+}
+
+// taskDone 在任务完成时调用
+func (d *DefaultContext) taskDone() {
+	d.decreaseActiveTask()
+}
+
+// safeGo 安全启动协程
+func (d *DefaultContext) safeGo(location string, fn func()) {
+	d.increaseActiveTask()
+	go func() {
+		defer d.recover()
+		defer d.taskDone()
+		fn()
+	}()
+}
+
 // SendError 发送错误消息
 // 参数:
 //   - title: 错误标题
 //   - err: 错误对象
 //   - fields: 额外字段
 func (d *DefaultContext) SendError(title string, err error, fields ...H) {
-	SafeGo(d, "x.DefaultContext.SendError", func() {
+	// 快速检查，避免不必要的goroutine启动
+	if errorRoboter == nil {
+		return
+	}
+
+	d.safeGo("x.DefaultContext.SendError", func() {
+		// 再次检查，因为可能在goroutine启动前后发生变化
 		if errorRoboter == nil {
 			return
 		}
 
-		fields = append([]H{d.robotHeader()}, fields...)
-		if err1 := errorRoboter.Send(title, err.Error(), fields...); err1 != nil {
+		// 预先分配足够容量的切片，避免后续扩容
+		allFields := make([]H, 0, len(fields)+1)
+		allFields = append(allFields, d.robotHeader())
+		allFields = append(allFields, fields...)
+
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+
+		if err1 := errorRoboter.Send(title, errMsg, allFields...); err1 != nil {
 			d.Error("x.DefaultContext.SendError", "send failed", err1, H{})
 		}
 	})
@@ -190,13 +334,20 @@ func (d *DefaultContext) SendError(title string, err error, fields ...H) {
 //   - title: 警告标题
 //   - fields: 额外字段
 func (d *DefaultContext) SendWarning(title string, fields ...H) {
-	SafeGo(d, "x.DefaultContext.SendWarning", func() {
+	if warningRoboter == nil {
+		return
+	}
+
+	d.safeGo("x.DefaultContext.SendWarning", func() {
 		if warningRoboter == nil {
 			return
 		}
 
-		fields = append([]H{d.robotHeader()}, fields...)
-		if err := warningRoboter.Send(title, "", fields...); err != nil {
+		allFields := make([]H, 0, len(fields)+1)
+		allFields = append(allFields, d.robotHeader())
+		allFields = append(allFields, fields...)
+
+		if err := warningRoboter.Send(title, "", allFields...); err != nil {
 			d.Error("x.DefaultContext.SendWarning", "send failed", err, H{})
 		}
 	})
@@ -207,13 +358,20 @@ func (d *DefaultContext) SendWarning(title string, fields ...H) {
 //   - title: 成功标题
 //   - fields: 额外字段
 func (d *DefaultContext) SendSuccess(title string, fields ...H) {
-	SafeGo(d, "x.DefaultContext.SendSuccess", func() {
+	if successRoboter == nil {
+		return
+	}
+
+	d.safeGo("x.DefaultContext.SendSuccess", func() {
 		if successRoboter == nil {
 			return
 		}
 
-		fields = append([]H{d.robotHeader()}, fields...)
-		if err := successRoboter.Send(title, "", fields...); err != nil {
+		allFields := make([]H, 0, len(fields)+1)
+		allFields = append(allFields, d.robotHeader())
+		allFields = append(allFields, fields...)
+
+		if err := successRoboter.Send(title, "", allFields...); err != nil {
 			d.Error("x.DefaultContext.SendSuccess", "send failed", err, H{})
 		}
 	})
@@ -224,13 +382,20 @@ func (d *DefaultContext) SendSuccess(title string, fields ...H) {
 //   - title: 信息标题
 //   - fields: 额外字段
 func (d *DefaultContext) SendInfo(title string, fields ...H) {
-	SafeGo(d, "x.DefaultContext.SendInfo", func() {
+	if infoRoboter == nil {
+		return
+	}
+
+	d.safeGo("x.DefaultContext.SendInfo", func() {
 		if infoRoboter == nil {
 			return
 		}
 
-		fields = append([]H{d.robotHeader()}, fields...)
-		if err := infoRoboter.Send(title, "", fields...); err != nil {
+		allFields := make([]H, 0, len(fields)+1)
+		allFields = append(allFields, d.robotHeader())
+		allFields = append(allFields, fields...)
+
+		if err := infoRoboter.Send(title, "", allFields...); err != nil {
 			d.Error("x.DefaultContext.SendInfo", "send failed", err, H{})
 		}
 	})
@@ -238,48 +403,77 @@ func (d *DefaultContext) SendInfo(title string, fields ...H) {
 
 // makeLoggerMessage 创建日志消息对象
 // 将上下文信息整合到日志消息中
-func (d *DefaultContext) makeLoggerMessage(location string, msg string, data any) (message *LoggerMessage) {
-	return &LoggerMessage{
-		Header:   d.Header,
-		Location: location,
-		Message:  msg,
-		Data:     data,
+func (d *DefaultContext) makeLoggerMessage(location string, msg string, data any) *LoggerMessage {
+	// 从对象池获取并初始化对象
+	message := GetLoggerMessage() // 使用logger.go中定义的全局函数
+	message.Header = d.Header
+	message.Location = location
+	message.Message = msg
+	message.Data = data
+	return message
+}
+
+// 高效处理日志的内部方法
+// 统一了日志处理逻辑，减少代码重复
+func (d *DefaultContext) logWithLevel(level LogLevel, location string, msg string, data any, err error) {
+	// 获取对象池中的消息对象
+	message := d.makeLoggerMessage(location, msg, data)
+
+	// 根据日志级别调用不同的处理方法
+	switch level {
+	case InfoLevel:
+		d.logger.Info(message)
+	case TraceLevel:
+		d.logger.Trace(message)
+	case DebugLevel:
+		d.logger.Debug(message)
+	case WarnLevel:
+		d.logger.Warn(message)
+	case ErrorLevel:
+		d.logger.Error(message, err)
+	case FatalLevel:
+		d.logger.Fatal(message)
+	case PanicLevel:
+		d.logger.Panic(message)
+	default:
+		// 未知级别默认使用Info
+		d.logger.Info(message)
 	}
 }
 
 // Info 记录信息级别日志
 func (d *DefaultContext) Info(location string, msg string, data any) {
-	d.logger.Info(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(InfoLevel, location, msg, data, nil)
 }
 
 // Trace 记录跟踪级别日志
 func (d *DefaultContext) Trace(location string, msg string, data any) {
-	d.logger.Trace(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(TraceLevel, location, msg, data, nil)
 }
 
 // Debug 记录调试级别日志
 func (d *DefaultContext) Debug(location string, msg string, data any) {
-	d.logger.Debug(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(DebugLevel, location, msg, data, nil)
 }
 
 // Warn 记录警告级别日志
 func (d *DefaultContext) Warn(location string, msg string, data any) {
-	d.logger.Warn(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(WarnLevel, location, msg, data, nil)
 }
 
 // Fatal 记录致命级别日志
 func (d *DefaultContext) Fatal(location string, msg string, data any) {
-	d.logger.Fatal(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(FatalLevel, location, msg, data, nil)
 }
 
 // Panic 记录恐慌级别日志
 func (d *DefaultContext) Panic(location string, msg string, data any) {
-	d.logger.Panic(d.makeLoggerMessage(location, msg, data))
+	d.logWithLevel(PanicLevel, location, msg, data, nil)
 }
 
 // Error 记录错误级别日志
 func (d *DefaultContext) Error(location string, message string, err error, data any) {
-	d.logger.Error(d.makeLoggerMessage(location, message, data), err)
+	d.logWithLevel(ErrorLevel, location, message, data, err)
 }
 
 // TakeLogger 获取日志记录器
@@ -289,54 +483,92 @@ func (d *DefaultContext) TakeLogger() ILogger {
 
 // Clone 创建上下文副本
 // 返回一个新的Context实例，包含原始上下文的头信息和日志记录器
-func (d *DefaultContext) Clone() (ctx Context) {
-	ctx = &DefaultContext{
-		Context: context.Background(),
-		Header:  d.Header.Clone(),
-		logger:  d.logger,
+func (d *DefaultContext) Clone() Context {
+	// 从对象池获取新的上下文
+	newCtx := defaultContextPool.Get().(*DefaultContext)
+
+	// 初始化新上下文
+	newCtx.ctxInternal = context.Background()
+	newCtx.StoreHeader(d.Header.Clone())
+	newCtx.logger = d.logger
+	newCtx.event = nil      // 懒加载，不复制
+	newCtx.robotCache = nil // 不复制缓存
+
+	// 初始化空的数据存储，不复制原有数据
+	if newCtx.dataCache == nil {
+		newCtx.dataCache = make(map[string]interface{}, 8)
+	} else {
+		// 清空已有映射
+		for k := range newCtx.dataCache {
+			delete(newCtx.dataCache, k)
+		}
 	}
 
-	return
+	return newCtx
 }
 
 // Get 获取指定键的值
 // 实现DataContext接口
 func (d *DefaultContext) Get(key string) (val any, ok bool) {
-	return d.mapping.Load(key)
+	d.rwMutex.RLock()
+	val, ok = d.dataCache[key]
+	d.rwMutex.RUnlock()
+	return
 }
 
+// Set 设置指定键的值
 func (d *DefaultContext) Set(key string, val any) {
-	// 类型白名单检查
-	//switch val.(type) {
-	//case string, int, int64, float64, bool, []string, []int, map[string]string:
-	//	// 允许的类型
-	//default:
-	//	// 对于复杂类型，尝试序列化以确保安全
-	//	if _, err := _json.Marshal(val); err != nil {
-	//		// 记录警告并拒绝不安全的值
-	//		d.Warn("x.DefaultContext.Set", "unsafe value type", H{
-	//			"key":  key,
-	//			"err":  err.Error(),
-	//			"type": fmt.Sprintf("%T", val),
-	//		})
-	//		return
-	//	}
-	//}
+	// 可以在此添加安全类型检查
+	// 但为了高性能，暂时不添加
 
-	d.mapping.Store(key, val)
+	d.rwMutex.Lock()
+	d.dataCache[key] = val
+	d.rwMutex.Unlock()
 }
 
+// StoreJwtClaim 存储JWT声明
 func (d *DefaultContext) StoreJwtClaim(claim IJwtClaim) {
-	d.mapping.Store(jwtClaimKey, claim)
+	d.Set(jwtClaimKey, claim)
 }
 
+// JwtClaim 获取JWT声明
 func (d *DefaultContext) JwtClaim() (claim IJwtClaim) {
-	val, ok := d.mapping.Load(jwtClaimKey)
+	val, ok := d.Get(jwtClaimKey)
 	if !ok {
-		return
+		return nil
 	}
 
-	return val.(IJwtClaim)
+	if claim, ok := val.(IJwtClaim); ok {
+		return claim
+	}
+	return nil
+}
+
+// Release 释放上下文资源，归还对象池
+// 需要在上下文使用完毕后显式调用
+func (d *DefaultContext) Release() {
+	// 清理数据，避免内存泄漏
+	d.rwMutex.Lock()
+	for k := range d.dataCache {
+		delete(d.dataCache, k)
+	}
+	d.rwMutex.Unlock()
+
+	// 重置字段
+	d.Header = nil
+	d.logger = nil
+	d.event = nil
+	d.robotCache = nil
+	d.ctxInternal = nil
+
+	// 确保没有正在执行的异步任务
+	if atomic.LoadInt32(&d.activeTask) == 0 {
+		recycleContext(d)
+	} else {
+		// 有活跃任务，记录日志但不归还池
+		// 避免在使用中归还导致问题
+		fmt.Printf("警告: 尝试释放有活跃任务的上下文，任务数: %d\n", d.activeTask)
+	}
 }
 
 // 新增统一的错误处理工具函数
@@ -351,4 +583,107 @@ func handleError(ctx Context, location string, operation string, err error, data
 
 	data["operation"] = operation
 	ctx.Error(location, operation+" failed", err, data)
+}
+
+// SafeGo 安全启动协程函数
+// 优化版本，针对DefaultContext有更高效的实现
+func SafeGo(ctx Context, location string, fn func()) {
+	if dctx, ok := ctx.(*DefaultContext); ok {
+		// 使用DefaultContext的优化版本
+		dctx.safeGo(location, fn)
+	} else {
+		// 普通实现
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// 直接使用预分配的缓冲区获取堆栈，减少内存分配
+					stack := takeStack()
+
+					var err error
+					switch v := r.(type) {
+					case error:
+						err = v
+					case string:
+						err = errors.New(v)
+					default:
+						err = fmt.Errorf("%v", r)
+					}
+
+					if ctx != nil {
+						ctx.Error(location+".recover", "goroutine panic", err, H{
+							"stack": stack,
+						})
+					} else {
+						// 当 ctx 为 nil 时，使用标准错误输出
+						fmt.Fprintf(os.Stderr, "Goroutine panic in %s: %v\n%s\n",
+							location, err, stack)
+					}
+				}
+			}()
+			fn()
+		}()
+	}
+}
+
+// WithTimeout 创建带超时的上下文
+// 返回带超时的新上下文和取消函数
+func WithTimeout(parent Context, timeout time.Duration) (Context, context.CancelFunc) {
+	if dctx, ok := parent.(*DefaultContext); ok {
+		// 创建带超时的内部上下文
+		ctx, cancel := context.WithTimeout(dctx.ctxInternal, timeout)
+
+		// 创建新的派生上下文
+		newCtx := dctx.Clone().(*DefaultContext)
+		newCtx.ctxInternal = ctx
+
+		return newCtx, cancel
+	}
+
+	// 不是DefaultContext，回退到标准实现
+	// 这种情况性能较差，因为需要包装整个Context接口
+	ctxWithTimeout, cancel := context.WithTimeout(parent, timeout)
+	return &ctxWrapper{Context: ctxWithTimeout, parent: parent}, cancel
+}
+
+// ctxWrapper 上下文包装器
+// 用于非DefaultContext的情况
+type ctxWrapper struct {
+	context.Context
+	parent Context
+}
+
+// Clone 实现Context接口的Clone方法
+func (w *ctxWrapper) Clone() Context {
+	return w.parent.Clone()
+}
+
+// 委托所有其他方法给parent
+func (w *ctxWrapper) TakeHeader() IHeader                  { return w.parent.TakeHeader() }
+func (w *ctxWrapper) TakeLogger() ILogger                  { return w.parent.TakeLogger() }
+func (w *ctxWrapper) Get(key string) (any, bool)           { return w.parent.Get(key) }
+func (w *ctxWrapper) Set(key string, val any)              { w.parent.Set(key, val) }
+func (w *ctxWrapper) Info(location, msg string, data any)  { w.parent.Info(location, msg, data) }
+func (w *ctxWrapper) Trace(location, msg string, data any) { w.parent.Trace(location, msg, data) }
+func (w *ctxWrapper) Debug(location, msg string, data any) { w.parent.Debug(location, msg, data) }
+func (w *ctxWrapper) Warn(location, msg string, data any)  { w.parent.Warn(location, msg, data) }
+func (w *ctxWrapper) Fatal(location, msg string, data any) { w.parent.Fatal(location, msg, data) }
+func (w *ctxWrapper) Panic(location, msg string, data any) { w.parent.Panic(location, msg, data) }
+func (w *ctxWrapper) Error(location, message string, err error, data any) {
+	w.parent.Error(location, message, err, data)
+}
+func (w *ctxWrapper) StoreJwtClaim(claim IJwtClaim) { w.parent.StoreJwtClaim(claim) }
+func (w *ctxWrapper) JwtClaim() IJwtClaim           { return w.parent.JwtClaim() }
+func (w *ctxWrapper) SendError(title string, err error, fields ...H) {
+	w.parent.SendError(title, err, fields...)
+}
+func (w *ctxWrapper) SendWarning(title string, fields ...H) { w.parent.SendWarning(title, fields...) }
+func (w *ctxWrapper) SendSuccess(title string, fields ...H) { w.parent.SendSuccess(title, fields...) }
+func (w *ctxWrapper) SendInfo(title string, fields ...H)    { w.parent.SendInfo(title, fields...) }
+func (w *ctxWrapper) StoreHeader(header IHeader)            { w.parent.StoreHeader(header) }
+
+// StoreHeader 原子操作设置请求头信息
+func (d *DefaultContext) StoreHeader(header IHeader) {
+	if h, ok := header.(*Header); ok {
+		atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&d.Header)), unsafe.Pointer(h))
+	}
 }
