@@ -14,6 +14,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// 静态断言确保RocketConsumerServer实现了IServer接口
+var _ IServer = (*RocketConsumerServer)(nil)
+
 func init() {
 	ResetRocketConfig()
 }
@@ -133,6 +136,7 @@ type RocketTaskHandler func(ctx Context, view *mq.MessageView) (err error)
 
 type RocketTaskRoutes map[ITaskName]RocketTaskHandler
 
+// RocketConsumerServer 实现 IServer 接口
 type RocketConsumerServer struct {
 	ctx Context
 	baseConsumerRocket

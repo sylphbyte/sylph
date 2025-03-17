@@ -1,0 +1,5 @@
+---
+description: 将saas的bootstrap 迁移过来
+globs: 
+alwaysApply: false
+---
