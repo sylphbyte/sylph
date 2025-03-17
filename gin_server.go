@@ -23,6 +23,15 @@ type GinOption struct {
 	MaxBytes     int    `yaml:"max_bytes" mapstructure:"max_bytes"`
 }
 
+var _ IServer = (*GinServer)(nil)
+
+func NewGinServer(opt GinOption) *GinServer {
+	return &GinServer{
+		opt:    opt,
+		engine: gin.New(),
+	}
+}
+
 // GinServer 实现 IServer
 type GinServer struct {
 	opt         GinOption
@@ -31,11 +40,8 @@ type GinServer struct {
 	routeHandle func(route *gin.Engine)
 }
 
-func NewGin(opt GinOption) *GinServer {
-	return &GinServer{
-		opt:    opt,
-		engine: gin.New(),
-	}
+func (g *GinServer) Name() string {
+	return g.opt.Name
 }
 
 func (g *GinServer) RegisterRoute(route func(route *gin.Engine)) {

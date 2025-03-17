@@ -136,16 +136,6 @@ type RocketTaskHandler func(ctx Context, view *mq.MessageView) (err error)
 
 type RocketTaskRoutes map[ITaskName]RocketTaskHandler
 
-// RocketConsumerServer 实现 IServer 接口
-type RocketConsumerServer struct {
-	ctx Context
-	baseConsumerRocket
-	routes RocketTaskRoutes
-	// 主题消息计数器，用于监控和优化
-	topicCounters map[string]int64
-	counterMutex  sync.RWMutex
-}
-
 func NewRocketConsumerServer(ctx Context, consumer RocketConsumer, instance RocketInstance) *RocketConsumerServer {
 	return &RocketConsumerServer{
 		ctx: ctx,
@@ -156,6 +146,20 @@ func NewRocketConsumerServer(ctx Context, consumer RocketConsumer, instance Rock
 		routes:        make(RocketTaskRoutes),
 		topicCounters: make(map[string]int64),
 	}
+}
+
+// RocketConsumerServer 实现 IServer 接口
+type RocketConsumerServer struct {
+	ctx Context
+	baseConsumerRocket
+	routes RocketTaskRoutes
+	// 主题消息计数器，用于监控和优化
+	topicCounters map[string]int64
+	counterMutex  sync.RWMutex
+}
+
+func (r *RocketConsumerServer) Name() string {
+	return r.consumer.Group
 }
 
 func (r *RocketConsumerServer) RegisterRoute(topic ITaskName, handler RocketTaskHandler) {

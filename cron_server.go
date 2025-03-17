@@ -69,8 +69,8 @@ type CronRouteHandlers struct {
 	Registry map[string]CrontabRouteFunc
 }
 
-func NewCrontab(ctx Context, mode CrontabMode, configs []TaskConfig) *Crontab {
-	return &Crontab{
+func NewCronServer(ctx Context, mode CrontabMode, configs []TaskConfig) *CronServer {
+	return &CronServer{
 		ctx:         ctx,
 		mode:        mode,
 		logger:      newCronLogger(ctx),
@@ -80,7 +80,9 @@ func NewCrontab(ctx Context, mode CrontabMode, configs []TaskConfig) *Crontab {
 	}
 }
 
-type Crontab struct {
+var _ IServer = (*CronServer)(nil)
+
+type CronServer struct {
 	ctx    Context
 	mode   CrontabMode
 	opts   []cron.Option
@@ -92,24 +94,28 @@ type Crontab struct {
 	started     bool
 }
 
-func (c *Crontab) Register(name TaskName, task TaskHandler) {
+func (c *CronServer) Name() string {
+	return "cron-server"
+}
+
+func (c *CronServer) Register(name TaskName, task TaskHandler) {
 	c.tasks[name] = task
 }
 
-func (c *Crontab) receiveTask(name TaskName) (task TaskHandler, ok bool) {
+func (c *CronServer) receiveTask(name TaskName) (task TaskHandler, ok bool) {
 	task, ok = c.tasks[name]
 	return
 }
 
 // 读取默认配置
-func (c *Crontab) loadDefaultOption() (opts []cron.Option) {
+func (c *CronServer) loadDefaultOption() (opts []cron.Option) {
 	return []cron.Option{
 		cron.WithSeconds(),
 		cron.WithLogger(c.logger),
 	}
 }
 
-func (c *Crontab) modeOptions() (opts []cron.Option) {
+func (c *CronServer) modeOptions() (opts []cron.Option) {
 	opts = make([]cron.Option, 0)
 
 	var wrapper cron.JobWrapper
@@ -127,15 +133,15 @@ func (c *Crontab) modeOptions() (opts []cron.Option) {
 	return append(opts, cron.WithChain(wrapper))
 }
 
-func (c *Crontab) combinationOptions() []cron.Option {
+func (c *CronServer) combinationOptions() []cron.Option {
 	return append(c.loadDefaultOption(), c.modeOptions()...)
 }
 
-func (c *Crontab) LoadOptions(opts ...cron.Option) {
+func (c *CronServer) LoadOptions(opts ...cron.Option) {
 	c.opts = append(c.opts, opts...)
 }
 
-func (c *Crontab) bindSwitchedHandler() {
+func (c *CronServer) bindSwitchedHandler() {
 
 	for _, conf := range c.taskConfigs {
 		if !conf.Open {
@@ -143,22 +149,22 @@ func (c *Crontab) bindSwitchedHandler() {
 		}
 
 		if _, ok := c.tasks[conf.Name]; !ok {
-			c.ctx.Warn("server.Crontab.bindSwitchedHandler", "crontab task not setting", H{
+			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", H{
 				"task": conf.Name.Name(),
 			})
 
-			pr.Warning("Crontab task %s not setting\n", conf.Name)
+			pr.Warning("CronServer task %s not setting\n", conf.Name)
 			continue
 		}
 
 		//pr.Green("config: %+v\n", conf)
 		if _, err := c.cron.AddFunc(conf.Spec, c.takeRunHandler(conf.Name)); err != nil {
-			pr.Panic("Crontab bindSwitchedHandler failed: %+v\n", err)
+			pr.Panic("CronServer bindSwitchedHandler failed: %+v\n", err)
 		}
 	}
 }
 
-func (c *Crontab) takeRunHandler(name TaskName) func() {
+func (c *CronServer) takeRunHandler(name TaskName) func() {
 	return func() {
 		handler := c.tasks[name]
 
@@ -168,7 +174,7 @@ func (c *Crontab) takeRunHandler(name TaskName) func() {
 		ctx.TakeHeader().GenerateTraceId()
 
 		if err := handler(ctx); err != nil {
-			ctx.Error("server.Crontab.takeRunHandler", "cron task run failed", err, H{
+			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, H{
 				"task": name.Name(),
 			})
 		}
@@ -176,7 +182,7 @@ func (c *Crontab) takeRunHandler(name TaskName) func() {
 
 }
 
-func (c *Crontab) Boot() (err error) {
+func (c *CronServer) Boot() (err error) {
 	if c.started {
 		return
 	}
@@ -193,7 +199,7 @@ func (c *Crontab) Boot() (err error) {
 	return
 }
 
-func (c *Crontab) Shutdown() error {
+func (c *CronServer) Shutdown() error {
 	c.cron.Stop()
 	return nil
 }

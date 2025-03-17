@@ -31,6 +31,7 @@ type IProject interface {
 
 // IServer 服务定义
 type IServer interface {
+	Name() string
 
 	// Boot 启动服务
 	Boot() error
