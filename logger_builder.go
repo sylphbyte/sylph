@@ -28,7 +28,7 @@ func getSharedFormatter(timestampFormat string) logrus.Formatter {
 	}
 
 	// 创建新的格式化器
-	formatter := &XLoggerFormatter{TimestampFormat: timestampFormat}
+	formatter := &LoggerFormatter{TimestampFormat: timestampFormat}
 	formatterCache.Store(timestampFormat, formatter)
 	return formatter
 }

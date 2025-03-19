@@ -74,7 +74,7 @@ func InjectRobotLimit(robotRedis *redis.Client) {
 }
 
 type IRobot interface {
-	SendMarkdown(template, title, content string, fieldsGroup ...H) error
+	SendMarkdown(template, title, content string, fieldsGroup ...map[string]interface{}) error
 }
 
 type robot struct {
@@ -92,7 +92,7 @@ func (r *robot) makeTitle(title string) string {
 	return fmt.Sprintf("系统通知: %s (%s)", title, r.now.Format(time.DateTime))
 }
 
-func (r *robot) Send(title, content string, fieldsGroup ...H) error {
+func (r *robot) Send(title, content string, fieldsGroup ...map[string]interface{}) error {
 	// 获取Redis客户端
 	rds := __robotRds
 

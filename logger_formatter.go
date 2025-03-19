@@ -2,6 +2,7 @@ package sylph
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -14,8 +15,8 @@ const (
 	loggerMessageKey = "message"
 )
 
-// XLoggerFormatter 是一个自定义的 JSON 格式化器，替代 logrus.JSONFormatter
-type XLoggerFormatter struct {
+// LoggerFormatter 是一个自定义的 JSON 格式化器，替代 logrus.JSONFormatter
+type LoggerFormatter struct {
 	TimestampFormat string
 	PrettyPrint     bool
 	// 添加对象池以减少内存分配
@@ -23,7 +24,7 @@ type XLoggerFormatter struct {
 }
 
 // 初始化对象池
-func (f *XLoggerFormatter) getBuffer() *bytes.Buffer {
+func (f *LoggerFormatter) getBuffer() *bytes.Buffer {
 	if f.bufferPool.New == nil {
 		f.bufferPool.New = func() interface{} {
 			return bytes.NewBuffer(make([]byte, 0, 1024)) // 预分配合理大小的缓冲区
@@ -36,11 +37,11 @@ func (f *XLoggerFormatter) getBuffer() *bytes.Buffer {
 }
 
 // 返回buffer到对象池
-func (f *XLoggerFormatter) putBuffer(buf *bytes.Buffer) {
+func (f *LoggerFormatter) putBuffer(buf *bytes.Buffer) {
 	f.bufferPool.Put(buf)
 }
 
-func (f *XLoggerFormatter) takeMessage(entry *logrus.Entry) *LoggerMessage {
+func (f *LoggerFormatter) takeMessage(entry *logrus.Entry) *LoggerMessage {
 	value, ok := entry.Data[loggerMessageKey]
 	if !ok {
 		return nil
@@ -49,7 +50,7 @@ func (f *XLoggerFormatter) takeMessage(entry *logrus.Entry) *LoggerMessage {
 	return value.(*LoggerMessage)
 }
 
-func (f *XLoggerFormatter) extData(entry *logrus.Entry, data logrus.Fields) {
+func (f *LoggerFormatter) extData(entry *logrus.Entry, data logrus.Fields) {
 	// 添加其他字段
 	for k, v := range entry.Data {
 		if k == loggerMessageKey {
@@ -64,7 +65,7 @@ func (f *XLoggerFormatter) extData(entry *logrus.Entry, data logrus.Fields) {
 	}
 }
 
-func (f *XLoggerFormatter) makeMessageData(message *LoggerMessage) *LoggerFormatMessage {
+func (f *LoggerFormatter) makeMessageData(message *LoggerMessage) *LoggerFormatMessage {
 	if message == nil {
 		return &LoggerFormatMessage{}
 	}
@@ -72,7 +73,7 @@ func (f *XLoggerFormatter) makeMessageData(message *LoggerMessage) *LoggerFormat
 	return message.MakeLoggerFormatMessage()
 }
 
-func (f *XLoggerFormatter) makeJsonContent(data *LoggerFormatMessage) ([]byte, error) {
+func (f *LoggerFormatter) makeJsonContent(data *LoggerFormatMessage) ([]byte, error) {
 	if !f.PrettyPrint {
 		return _json.Marshal(data) // _json 已经是线程安全的 Froze() 实例
 	}
@@ -81,7 +82,7 @@ func (f *XLoggerFormatter) makeJsonContent(data *LoggerFormatMessage) ([]byte, e
 }
 
 // Format 实现 logrus.Formatter 接口
-func (f *XLoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+func (f *LoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// 打印错误信息到标准输出
@@ -144,9 +145,17 @@ func (f *XLoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	buf.WriteByte('>')
 	buf.WriteByte(' ')
 
+	if message != nil && message.Marks != nil && len(message.Marks) > 0 {
+		buf.WriteString("marks: ")
+		markJson, _ := json.Marshal(message.Marks)
+		buf.Write(markJson)
+		buf.WriteByte(' ')
+	}
+
 	if message != nil {
 		buf.WriteString(message.Message)
 	}
+
 	buf.WriteByte(' ')
 	buf.Write(serialized)
 	buf.WriteByte('\n')

@@ -10,6 +10,46 @@ import (
 	"strings"
 )
 
+const (
+	HttpKind Kind = iota + 1
+	CrontabKind
+	MessageQueueKind
+	RedisQueueKind
+)
+
+type Kind int
+
+const (
+	Gin    Name = "gin"
+	Cron   Name = "cron"
+	Rocket Name = "rocket"
+)
+
+type Name string
+
+// IProject 服务容器
+type IProject interface {
+	// Mounts 装载服务
+	Mounts(servers ...IServer) IProject
+
+	// Boots 启动服务
+	Boots() error
+
+	// Shutdowns 关闭服务
+	Shutdowns() error
+}
+
+// IServer 服务定义
+type IServer interface {
+	Name() string
+
+	// Boot 启动服务
+	Boot() error
+
+	// Shutdown 关闭服务
+	Shutdown() error
+}
+
 // ITaskName 定义任务名接口
 // 用于在消息队列中标识不同的任务类型
 type ITaskName interface {

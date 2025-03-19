@@ -86,10 +86,10 @@ type Context interface {
 	JwtClaim() (claim IJwtClaim)   // 获取JWT声明
 
 	// 通知相关方法
-	SendError(title string, err error, fields ...H) // 发送错误通知
-	SendWarning(title string, fields ...H)          // 发送警告通知
-	SendSuccess(title string, fields ...H)          // 发送成功通知
-	SendInfo(title string, fields ...H)             // 发送信息通知
+	SendError(title string, err error, fields ...map[string]interface{}) // 发送错误通知
+	SendWarning(title string, fields ...map[string]interface{})          // 发送警告通知
+	SendSuccess(title string, fields ...map[string]interface{})          // 发送成功通知
+	SendInfo(title string, fields ...map[string]interface{})             // 发送信息通知
 }
 
 // 确保DefaultContext实现了Context接口
@@ -166,14 +166,15 @@ func NewDefaultContext(endpoint Endpoint, path string) Context {
 
 // DefaultContext 默认上下文实现
 type DefaultContext struct {
-	ctxInternal context.Context        // 内部上下文
-	dataCache   map[string]interface{} // 并发安全的键值存储，使用读写锁保护
-	rwMutex     sync.RWMutex           // 保护dataCache的读写锁
-	Header      *Header                `json:"header"` // 请求头信息
-	logger      ILogger                // 日志记录器
-	event       *event                 // 事件系统（懒加载）
-	robotCache  *H                     // 机器人通知缓存
-	activeTask  int32                  // 当前活跃任务计数（原子操作）
+	ctxInternal context.Context         // 内部上下文
+	dataCache   map[string]interface{}  // 并发安全的键值存储，使用读写锁保护
+	rwMutex     sync.RWMutex            // 保护dataCache的读写锁
+	Header      *Header                 `json:"header"` // 请求头信息
+	Marks       map[string]interface{}  `json:"marks"`  // 自定义标记
+	logger      ILogger                 // 日志记录器
+	event       *event                  // 事件系统（懒加载）
+	robotCache  *map[string]interface{} // 机器人通知缓存
+	activeTask  int32                   // 当前活跃任务计数（原子操作）
 }
 
 // Deadline 实现context.Context接口
@@ -203,7 +204,7 @@ func (d *DefaultContext) TakeHeader() IHeader {
 }
 
 // robotHeader 构建机器人通知的头部信息（带缓存）
-func (d *DefaultContext) robotHeader() H {
+func (d *DefaultContext) robotHeader() map[string]interface{} {
 	// 使用缓存提高性能
 	if d.robotCache != nil {
 		return *d.robotCache
@@ -217,7 +218,7 @@ func (d *DefaultContext) robotHeader() H {
 	hourStr := fmt.Sprintf("%d", now.Hour())
 
 	// 创建缓存并返回
-	h := H{
+	h := map[string]interface{}{
 		"Mark":    d.Header.MarkVal,
 		"TraceId": traceId,
 		"Command": "grep " + traceId + " /wider-logs/" + timeStr + "/" + string(d.Header.Endpoint) + "." + hourStr + ".*.log",
@@ -230,7 +231,7 @@ func (d *DefaultContext) robotHeader() H {
 // recover 恢复函数，用于捕获并处理panic
 func (d *DefaultContext) recover() {
 	if r := recover(); r != nil {
-		d.Error("x.DefaultContext.recover", "context error", errors.Errorf("%v", r), H{
+		d.Error("x.DefaultContext.recover", "context error", errors.Errorf("%v", r), map[string]interface{}{
 			"stack": takeStack(),
 		})
 	}
@@ -301,7 +302,7 @@ func (d *DefaultContext) safeGo(location string, fn func()) {
 //   - title: 错误标题
 //   - err: 错误对象
 //   - fields: 额外字段
-func (d *DefaultContext) SendError(title string, err error, fields ...H) {
+func (d *DefaultContext) SendError(title string, err error, fields ...map[string]interface{}) {
 	// 快速检查，避免不必要的goroutine启动
 	if errorRoboter == nil {
 		return
@@ -314,7 +315,7 @@ func (d *DefaultContext) SendError(title string, err error, fields ...H) {
 		}
 
 		// 预先分配足够容量的切片，避免后续扩容
-		allFields := make([]H, 0, len(fields)+1)
+		allFields := make([]map[string]interface{}, 0, len(fields)+1)
 		allFields = append(allFields, d.robotHeader())
 		allFields = append(allFields, fields...)
 
@@ -324,7 +325,7 @@ func (d *DefaultContext) SendError(title string, err error, fields ...H) {
 		}
 
 		if err1 := errorRoboter.Send(title, errMsg, allFields...); err1 != nil {
-			d.Error("x.DefaultContext.SendError", "send failed", err1, H{})
+			d.Error("x.DefaultContext.SendError", "send failed", err1, map[string]interface{}{})
 		}
 	})
 }
@@ -333,7 +334,7 @@ func (d *DefaultContext) SendError(title string, err error, fields ...H) {
 // 参数:
 //   - title: 警告标题
 //   - fields: 额外字段
-func (d *DefaultContext) SendWarning(title string, fields ...H) {
+func (d *DefaultContext) SendWarning(title string, fields ...map[string]interface{}) {
 	if warningRoboter == nil {
 		return
 	}
@@ -343,12 +344,12 @@ func (d *DefaultContext) SendWarning(title string, fields ...H) {
 			return
 		}
 
-		allFields := make([]H, 0, len(fields)+1)
+		allFields := make([]map[string]interface{}, 0, len(fields)+1)
 		allFields = append(allFields, d.robotHeader())
 		allFields = append(allFields, fields...)
 
 		if err := warningRoboter.Send(title, "", allFields...); err != nil {
-			d.Error("x.DefaultContext.SendWarning", "send failed", err, H{})
+			d.Error("x.DefaultContext.SendWarning", "send failed", err, map[string]interface{}{})
 		}
 	})
 }
@@ -357,7 +358,7 @@ func (d *DefaultContext) SendWarning(title string, fields ...H) {
 // 参数:
 //   - title: 成功标题
 //   - fields: 额外字段
-func (d *DefaultContext) SendSuccess(title string, fields ...H) {
+func (d *DefaultContext) SendSuccess(title string, fields ...map[string]interface{}) {
 	if successRoboter == nil {
 		return
 	}
@@ -367,12 +368,12 @@ func (d *DefaultContext) SendSuccess(title string, fields ...H) {
 			return
 		}
 
-		allFields := make([]H, 0, len(fields)+1)
+		allFields := make([]map[string]interface{}, 0, len(fields)+1)
 		allFields = append(allFields, d.robotHeader())
 		allFields = append(allFields, fields...)
 
 		if err := successRoboter.Send(title, "", allFields...); err != nil {
-			d.Error("x.DefaultContext.SendSuccess", "send failed", err, H{})
+			d.Error("x.DefaultContext.SendSuccess", "send failed", err, map[string]interface{}{})
 		}
 	})
 }
@@ -381,7 +382,7 @@ func (d *DefaultContext) SendSuccess(title string, fields ...H) {
 // 参数:
 //   - title: 信息标题
 //   - fields: 额外字段
-func (d *DefaultContext) SendInfo(title string, fields ...H) {
+func (d *DefaultContext) SendInfo(title string, fields ...map[string]interface{}) {
 	if infoRoboter == nil {
 		return
 	}
@@ -391,12 +392,12 @@ func (d *DefaultContext) SendInfo(title string, fields ...H) {
 			return
 		}
 
-		allFields := make([]H, 0, len(fields)+1)
+		allFields := make([]map[string]interface{}, 0, len(fields)+1)
 		allFields = append(allFields, d.robotHeader())
 		allFields = append(allFields, fields...)
 
 		if err := infoRoboter.Send(title, "", allFields...); err != nil {
-			d.Error("x.DefaultContext.SendInfo", "send failed", err, H{})
+			d.Error("x.DefaultContext.SendInfo", "send failed", err, map[string]interface{}{})
 		}
 	})
 }
@@ -407,6 +408,7 @@ func (d *DefaultContext) makeLoggerMessage(location string, msg string, data any
 	// 从对象池获取并初始化对象
 	message := GetLoggerMessage() // 使用logger.go中定义的全局函数
 	message.Header = d.Header
+	message.Marks = d.Marks
 	message.Location = location
 	message.Message = msg
 	message.Data = data
@@ -572,13 +574,13 @@ func (d *DefaultContext) Release() {
 }
 
 // 新增统一的错误处理工具函数
-func handleError(ctx Context, location string, operation string, err error, data H) {
+func handleError(ctx Context, location string, operation string, err error, data map[string]interface{}) {
 	if err == nil {
 		return
 	}
 
 	if data == nil {
-		data = H{}
+		data = map[string]interface{}{}
 	}
 
 	data["operation"] = operation
@@ -610,12 +612,12 @@ func SafeGo(ctx Context, location string, fn func()) {
 					}
 
 					if ctx != nil {
-						ctx.Error(location+".recover", "goroutine panic", err, H{
+						ctx.Error(location+".recover", "goroutine panic", err, map[string]interface{}{
 							"stack": stack,
 						})
 					} else {
 						// 当 ctx 为 nil 时，使用标准错误输出
-						fmt.Fprintf(os.Stderr, "Goroutine panic in %s: %v\n%s\n",
+						_, _ = fmt.Fprintf(os.Stderr, "Goroutine panic in %s: %v\n%s\n",
 							location, err, stack)
 					}
 				}
@@ -673,13 +675,19 @@ func (w *ctxWrapper) Error(location, message string, err error, data any) {
 }
 func (w *ctxWrapper) StoreJwtClaim(claim IJwtClaim) { w.parent.StoreJwtClaim(claim) }
 func (w *ctxWrapper) JwtClaim() IJwtClaim           { return w.parent.JwtClaim() }
-func (w *ctxWrapper) SendError(title string, err error, fields ...H) {
+func (w *ctxWrapper) SendError(title string, err error, fields ...map[string]interface{}) {
 	w.parent.SendError(title, err, fields...)
 }
-func (w *ctxWrapper) SendWarning(title string, fields ...H) { w.parent.SendWarning(title, fields...) }
-func (w *ctxWrapper) SendSuccess(title string, fields ...H) { w.parent.SendSuccess(title, fields...) }
-func (w *ctxWrapper) SendInfo(title string, fields ...H)    { w.parent.SendInfo(title, fields...) }
-func (w *ctxWrapper) StoreHeader(header IHeader)            { w.parent.StoreHeader(header) }
+func (w *ctxWrapper) SendWarning(title string, fields ...map[string]interface{}) {
+	w.parent.SendWarning(title, fields...)
+}
+func (w *ctxWrapper) SendSuccess(title string, fields ...map[string]interface{}) {
+	w.parent.SendSuccess(title, fields...)
+}
+func (w *ctxWrapper) SendInfo(title string, fields ...map[string]interface{}) {
+	w.parent.SendInfo(title, fields...)
+}
+func (w *ctxWrapper) StoreHeader(header IHeader) { w.parent.StoreHeader(header) }
 
 // StoreHeader 原子操作设置请求头信息
 func (d *DefaultContext) StoreHeader(header IHeader) {

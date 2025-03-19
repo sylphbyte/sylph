@@ -46,12 +46,6 @@ func ReleaseLoggerMessage(msg *LoggerMessage) {
 			}
 			// 保留空map结构，避免重新分配
 			msg.Data = dataMap
-		} else if dataH, ok := msg.Data.(H); ok {
-			// 处理H类型（本质是map[string]interface{}）
-			for k := range dataH {
-				delete(dataH, k)
-			}
-			msg.Data = dataH
 		} else {
 			// 其他类型直接设为nil
 			msg.Data = nil
@@ -72,12 +66,13 @@ func ReleaseLoggerMessage(msg *LoggerMessage) {
 // LoggerMessage 日志消息结构体
 // 包含日志的全部上下文信息
 type LoggerMessage struct {
-	Header   *Header `json:"header"`          // 请求头信息
-	Location string  `json:"-"`               // 代码位置，不序列化到JSON
-	Message  string  `json:"-"`               // 日志消息，不序列化到JSON
-	Data     any     `json:"data,omitempty"`  // 数据内容
-	Error    string  `json:"error,omitempty"` // 错误信息
-	Stack    string  `json:"stack,omitempty"` // 堆栈信息
+	Header   *Header `json:"header"` // 请求头信息
+	Marks    map[string]interface{}
+	Location string `json:"-"`               // 代码位置，不序列化到JSON
+	Message  string `json:"-"`               // 日志消息，不序列化到JSON
+	Data     any    `json:"data,omitempty"`  // 数据内容
+	Error    string `json:"error,omitempty"` // 错误信息
+	Stack    string `json:"stack,omitempty"` // 堆栈信息
 }
 
 // MakeLoggerFormatMessage 将LoggerMessage转换为LoggerFormatMessage
