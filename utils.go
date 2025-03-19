@@ -100,7 +100,7 @@ func RecoverWithFunc(onPanic func(r interface{})) {
 func RecoverGoroutine(ctx Context, location string) {
 	if r := recover(); r != nil {
 		stack := takeStack()
-		ctx.Error(location, "goroutine panic", nil, H{
+		ctx.Error(location, "goroutine panic", nil, map[string]interface{}{
 			"error": r,
 			"stack": stack,
 		})
