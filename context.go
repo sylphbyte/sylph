@@ -66,9 +66,10 @@ type Context interface {
 	DataContext                 // 数据功能
 	TakeHeader() IHeader        // 获取请求头信息
 	StoreHeader(header IHeader) // 设置请求头信息
-	Clone() Context             // 创建上下文副本
-
-	TakeLogger() ILogger // 获取日志记录器
+	WithMark(key string, val any)
+	TakeMarks() map[string]interface{} // 获取标记信息
+	Clone() Context                    // 创建上下文副本
+	TakeLogger() ILogger               // 获取日志记录器
 	//ReceiveDB(name string) *gorm.DB // 工厂
 	//ReceiveRedis(name string) *redis.Client
 
@@ -175,6 +176,24 @@ type DefaultContext struct {
 	event       *event                  // 事件系统（懒加载）
 	robotCache  *map[string]interface{} // 机器人通知缓存
 	activeTask  int32                   // 当前活跃任务计数（原子操作）
+}
+
+func (d *DefaultContext) WithMark(key string, val any) {
+	d.rwMutex.Lock()
+	defer d.rwMutex.Unlock()
+
+	if d.Marks == nil {
+		d.Marks = make(map[string]interface{}, 8)
+	}
+
+	d.Marks[key] = val
+}
+
+func (d *DefaultContext) TakeMarks() map[string]interface{} {
+	d.rwMutex.Lock()
+	defer d.rwMutex.Unlock()
+
+	return d.Marks
 }
 
 // Deadline 实现context.Context接口
@@ -652,6 +671,14 @@ func WithTimeout(parent Context, timeout time.Duration) (Context, context.Cancel
 type ctxWrapper struct {
 	context.Context
 	parent Context
+}
+
+func (w *ctxWrapper) WithMark(key string, val any) {
+	w.parent.WithMark(key, val)
+}
+
+func (w *ctxWrapper) TakeMarks() map[string]interface{} {
+	return w.parent.TakeMarks()
 }
 
 // Clone 实现Context接口的Clone方法

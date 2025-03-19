@@ -13,6 +13,7 @@ import (
 // 用于标准化日志输出格式
 type LoggerFormatMessage struct {
 	Header *Header                `json:"header"`          // 请求头信息
+	Marks  map[string]interface{} `json:"marks,omitempty"` // 标记信息
 	Info   any                    `json:"info,omitempty"`  // 信息数据
 	Error  string                 `json:"error,omitempty"` // 错误信息
 	Stack  string                 `json:"stack,omitempty"` // 堆栈信息
@@ -80,6 +81,7 @@ type LoggerMessage struct {
 func (m *LoggerMessage) MakeLoggerFormatMessage() (formatMessage *LoggerFormatMessage) {
 	return &LoggerFormatMessage{
 		Header: m.Header,
+		Marks:  m.Marks,
 		Info:   m.Data,
 		Error:  m.Error,
 		Stack:  m.Stack,
@@ -103,6 +105,8 @@ func (m *LoggerMessage) Clone() *LoggerMessage {
 	clone.Message = m.Message
 	clone.Error = m.Error
 	clone.Stack = m.Stack
+
+	clone.Marks = m.Marks
 
 	// 复制数据
 	clone.Data = m.Data // 假设Data是不可变的或者已经是副本

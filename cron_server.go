@@ -149,7 +149,7 @@ func (c *CronServer) bindSwitchedHandler() {
 		}
 
 		if _, ok := c.tasks[conf.Name]; !ok {
-			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", H{
+			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", map[string]interface{}{
 				"task": conf.Name.Name(),
 			})
 
@@ -174,7 +174,7 @@ func (c *CronServer) takeRunHandler(name TaskName) func() {
 		ctx.TakeHeader().GenerateTraceId()
 
 		if err := handler(ctx); err != nil {
-			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, H{
+			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, map[string]interface{}{
 				"task": name.Name(),
 			})
 		}
