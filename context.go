@@ -87,7 +87,10 @@ type LogContext interface {
 //	}
 type DataContext interface {
 	Get(key string) (val any, ok bool) // 获取指定键的值，第二个返回值表示键是否存在
-	Set(key string, val any)           // 设置指定键的值，如果键已存在则覆盖
+	GetString(key string) (string, bool)
+	GetInt(key string) (int, bool)
+
+	Set(key string, val any) // 设置指定键的值，如果键已存在则覆盖
 }
 
 // Context 核心上下文接口
@@ -242,6 +245,7 @@ func NewContext(endpoint Endpoint, path string) Context {
 		PathVal:     path,
 		TraceIdVal:  generateTraceId(),
 	}
+
 	ctx.StoreHeader(header)
 	ctx.logger = _loggerManager.Receive(string(endpoint))
 	ctx.event = nil // 懒加载
@@ -774,6 +778,16 @@ func (d *DefaultContext) Get(key string) (val any, ok bool) {
 	return
 }
 
+func (d *DefaultContext) GetString(key string) (string, bool) {
+	get, b := d.Get(key)
+	return get.(string), b
+}
+
+func (d *DefaultContext) GetInt(key string) (int, bool) {
+	get, b := d.Get(key)
+	return get.(int), b
+}
+
 // Set 设置指定键的值
 func (d *DefaultContext) Set(key string, val any) {
 	// 可以在此添加安全类型检查
@@ -924,9 +938,17 @@ func (w *ctxWrapper) Clone() Context {
 }
 
 // 委托所有其他方法给parent
-func (w *ctxWrapper) TakeHeader() IHeader                  { return w.parent.TakeHeader() }
-func (w *ctxWrapper) TakeLogger() ILogger                  { return w.parent.TakeLogger() }
-func (w *ctxWrapper) Get(key string) (any, bool)           { return w.parent.Get(key) }
+func (w *ctxWrapper) TakeHeader() IHeader        { return w.parent.TakeHeader() }
+func (w *ctxWrapper) TakeLogger() ILogger        { return w.parent.TakeLogger() }
+func (w *ctxWrapper) Get(key string) (any, bool) { return w.parent.Get(key) }
+func (w *ctxWrapper) GetString(key string) (string, bool) {
+	get, b := w.Get(key)
+	return get.(string), b
+}
+func (w *ctxWrapper) GetInt(key string) (int, bool) {
+	get, b := w.Get(key)
+	return get.(int), b
+}
 func (w *ctxWrapper) Set(key string, val any)              { w.parent.Set(key, val) }
 func (w *ctxWrapper) Info(location, msg string, data any)  { w.parent.Info(location, msg, data) }
 func (w *ctxWrapper) Trace(location, msg string, data any) { w.parent.Trace(location, msg, data) }
