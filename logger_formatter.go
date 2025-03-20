@@ -131,7 +131,7 @@ func (f *LoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	// 使用 WriteString 代替 fmt.Sprintf 减少内存分配
 	buf.WriteByte('[')
 	if message != nil && message.Header != nil {
-		buf.WriteString(string(message.Header.Endpoint))
+		buf.WriteString(string(message.Header.EndpointVal))
 	}
 	buf.WriteByte('-')
 	buf.WriteString(entry.Level.String())

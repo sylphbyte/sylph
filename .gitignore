@@ -1,0 +1,14 @@
+.idea
+/antctl
+logs
+/test
+/example
+etc/develop.*
+/tmp
+go.work
+*.log
+.history
+.DS_Store
+.cursor
+/etc
+/tests
