@@ -418,10 +418,32 @@ type IHeader interface {
 	// 返回唯一的跟踪标识符
 	TraceId() string
 
+	Ref() string
+
+	StoreRef(ref string)
+
+	StorePath(path string)
+
+	WithTraceId(traceId string)
+
+	GenerateTraceId()
+
+	ResetTraceId()
+
+	WithMark(mark string)
+
+	StoreIP(ip string)
+
+	IP() string
+
 	// Clone 创建请求头的副本
 	// 返回一个新的Header实例，包含相同的值
 	Clone() *Header
 }
+
+/*
+
+ */
 
 // IMessage 消息接口
 // 定义了消息的基本操作方法，用于消息队列系统
