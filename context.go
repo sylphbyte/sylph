@@ -91,6 +91,7 @@ type DataContext interface {
 	GetInt(key string) (int, bool)
 
 	Set(key string, val any) // 设置指定键的值，如果键已存在则覆盖
+	MarkSet(key string, val any)
 }
 
 // Context 核心上下文接口
@@ -788,6 +789,11 @@ func (d *DefaultContext) GetInt(key string) (int, bool) {
 	return get.(int), b
 }
 
+func (d *DefaultContext) MarkSet(key string, val any) {
+	d.WithMark(key)
+	d.Set(key, val)
+}
+
 // Set 设置指定键的值
 func (d *DefaultContext) Set(key string, val any) {
 	// 可以在此添加安全类型检查
@@ -949,7 +955,12 @@ func (w *ctxWrapper) GetInt(key string) (int, bool) {
 	get, b := w.Get(key)
 	return get.(int), b
 }
-func (w *ctxWrapper) Set(key string, val any)              { w.parent.Set(key, val) }
+func (w *ctxWrapper) Set(key string, val any) { w.parent.Set(key, val) }
+
+func (w *ctxWrapper) MarkSet(key string, val any) {
+	w.parent.MarkSet(key, val)
+}
+
 func (w *ctxWrapper) Info(location, msg string, data any)  { w.parent.Info(location, msg, data) }
 func (w *ctxWrapper) Trace(location, msg string, data any) { w.parent.Trace(location, msg, data) }
 func (w *ctxWrapper) Debug(location, msg string, data any) { w.parent.Debug(location, msg, data) }
