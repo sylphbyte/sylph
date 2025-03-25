@@ -2,8 +2,6 @@ package sylph
 
 import (
 	"context"
-	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -24,17 +22,17 @@ import (
 func init() {
 	// 设置适当的GOMAXPROCS以避免超订阅
 	// 将Go运行时使用的CPU数量设置为机器的逻辑CPU数量
-	cpus := runtime.NumCPU()
-	runtime.GOMAXPROCS(cpus)
-
-	// 调整GC参数，在高并发场景下平衡GC压力和内存使用
-	// 默认为100，增加这个值会减少GC频率但增加内存使用
-	// 200表示当内存使用量达到上次GC后内存使用量的300%时触发GC
-	debug.SetGCPercent(200)
-
-	// 为了减少GC暂停时间，可以设置较小的并行度
-	// 控制GC使用的最大线程数，这里设置为CPU数量的两倍
-	debug.SetMaxThreads(cpus * 2)
+	//cpus := runtime.NumCPU()
+	//runtime.GOMAXPROCS(cpus)
+	//
+	//// 调整GC参数，在高并发场景下平衡GC压力和内存使用
+	//// 默认为100，增加这个值会减少GC频率但增加内存使用
+	//// 200表示当内存使用量达到上次GC后内存使用量的300%时触发GC
+	//debug.SetGCPercent(200)
+	//
+	//// 为了减少GC暂停时间，可以设置较小的并行度
+	//// 控制GC使用的最大线程数，这里设置为CPU数量的两倍
+	//debug.SetMaxThreads(cpus * 2)
 }
 
 // 为常用的小对象添加对象池以减少GC压力
