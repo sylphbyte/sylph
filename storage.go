@@ -57,9 +57,9 @@ type ESConfig struct {
 
 // StorageConfigs 存储配置结构体
 type StorageConfigs struct {
-	MysqlGroup map[string]MysqlConfig `yaml:"mysql_group"`
-	RedisGroup map[string]RedisConfig `yaml:"redis_group"`
-	ESGroup    map[string]ESConfig    `yaml:"es_group"`
+	MysqlGroup map[string]MysqlConfig `yaml:"mysql_group" mapstructure:"mysql_group"`
+	RedisGroup map[string]RedisConfig `yaml:"redis_group" mapstructure:"redis_group"`
+	ESGroup    map[string]ESConfig    `yaml:"es_group" mapstructure:"es_group"`
 }
 
 func InitializeStorageConfigs(configs StorageConfigs, enabledMysql, enabledRedis, enabledES map[string]bool) (*StorageManagerImpl, error) {
