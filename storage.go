@@ -62,8 +62,7 @@ type StorageConfigs struct {
 	ESGroup    map[string]ESConfig    `yaml:"es_group" mapstructure:"es_group"`
 }
 
-func InitializeStorageConfigs(configs StorageConfigs, enabledMysql, enabledRedis, enabledES map[string]bool) (*StorageManagerImpl, error) {
-
+func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedis, enabledES map[string]bool) (*StorageManagerImpl, error) {
 	// 创建存储管理器
 	storageManager := NewStorageManager()
 
