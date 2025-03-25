@@ -781,12 +781,18 @@ func (d *DefaultContext) Get(key string) (val any, ok bool) {
 
 func (d *DefaultContext) GetString(key string) (string, bool) {
 	get, b := d.Get(key)
-	return get.(string), b
+	if b {
+		return get.(string), b
+	}
+	return "", b
 }
 
 func (d *DefaultContext) GetInt(key string) (int, bool) {
 	get, b := d.Get(key)
-	return get.(int), b
+	if b {
+		return get.(int), b
+	}
+	return 0, b
 }
 
 func (d *DefaultContext) MarkSet(key string, val any) {
@@ -949,11 +955,17 @@ func (w *ctxWrapper) TakeLogger() ILogger        { return w.parent.TakeLogger() 
 func (w *ctxWrapper) Get(key string) (any, bool) { return w.parent.Get(key) }
 func (w *ctxWrapper) GetString(key string) (string, bool) {
 	get, b := w.Get(key)
-	return get.(string), b
+	if b {
+		return get.(string), b
+	}
+	return "", b
 }
 func (w *ctxWrapper) GetInt(key string) (int, bool) {
 	get, b := w.Get(key)
-	return get.(int), b
+	if b {
+		return get.(int), b
+	}
+	return 0, b
 }
 func (w *ctxWrapper) Set(key string, val any) { w.parent.Set(key, val) }
 
