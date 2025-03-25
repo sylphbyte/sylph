@@ -62,6 +62,81 @@ type StorageConfigs struct {
 	ESGroup    map[string]ESConfig    `yaml:"es_group"`
 }
 
+func InitializeStorageConfigs(configs StorageConfigs, enabledMysql, enabledRedis, enabledES map[string]bool) (*StorageManagerImpl, error) {
+
+	// 创建存储管理器
+	storageManager := NewStorageManager()
+
+	for name, config := range configs.MysqlGroup {
+		// 检查是否启用
+		if enabled, exists := enabledMysql[name]; !exists || !enabled {
+			pr.Warning("MySQL数据库 %s 未启用", name)
+			continue
+		}
+
+		// 初始化MySQL连接
+		db, err := InitMysql(config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "初始化MySQL连接失败: %s", name)
+		}
+
+		// 注册到存储管理器
+		if err = storageManager.RegisterDB(name, NewMysqlStorage(name, db)); err != nil {
+			pr.Error("初始化MySQL连接失败: %s, err: %v", name, err)
+			continue
+		}
+
+		pr.System("MySQL数据库 %s 已注册到存储管理器", name)
+	}
+
+	for name, config := range configs.RedisGroup {
+		// 检查是否启用
+		if enabled, exists := enabledRedis[name]; !exists || !enabled {
+			pr.Warning("Redis %s 未启用", name)
+			continue
+		}
+
+		// 初始化Redis连接
+		rds, err := InitRedis(config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "初始化Redis连接失败: %s", name)
+		}
+
+		// 注册到存储管理器
+		if err = storageManager.RegisterRedis(name, NewRedisStorage(name, rds)); err != nil {
+			pr.Error("初始化Redis连接失败: %s, err: %v", name, err)
+			continue
+		}
+
+		pr.System("Redis %s 已注册到存储管理器", name)
+	}
+
+	// 初始化Elasticsearch连接
+	for name, config := range configs.ESGroup {
+		// 检查是否启用
+		if enabled, exists := enabledES[name]; !exists || !enabled {
+			pr.Warning("Elasticsearch %s 未启用", name)
+			continue
+		}
+
+		// 初始化ES连接
+		es, err := InitES(config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "初始化Elasticsearch连接失败: %s", name)
+		}
+
+		// 注册到存储管理器
+		if err = storageManager.RegisterES(name, NewESStorage(name, es)); err != nil {
+			pr.Error("初始化Elasticsearch连接失败: %s, err: %v", name, err)
+			continue
+		}
+
+		pr.System("Elasticsearch %s 已注册到存储管理器", name)
+	}
+
+	return storageManager, nil
+}
+
 // InitializeStorage 初始化存储服务
 func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]bool, enabledES map[string]bool) (*StorageManagerImpl, error) {
 	pr.System("初始化存储服务，配置文件: %s", configPath)
