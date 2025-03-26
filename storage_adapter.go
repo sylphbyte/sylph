@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/sylphbyte/pr"
