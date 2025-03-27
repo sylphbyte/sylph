@@ -938,6 +938,10 @@ type ctxWrapper struct {
 	parent Context
 }
 
+func (w *ctxWrapper) Release() {
+	w.parent.Release()
+}
+
 func (w *ctxWrapper) WithMark(marks ...string) {
 	w.parent.WithMark(marks...)
 }
