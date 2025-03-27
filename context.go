@@ -146,6 +146,8 @@ type Context interface {
 	TakeMarks() map[string]any  // 获取标记信息
 	Clone() Context             // 创建上下文副本，用于派生新的上下文
 	TakeLogger() ILogger        // 获取日志记录器，用于自定义日志记录
+
+	Release() // 释放上下文，用于回收资源
 	//ReceiveDB(name string) *gorm.DB // 工厂
 	//ReceiveRedis(name string) *redis.Client
 
