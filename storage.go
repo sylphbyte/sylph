@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -338,20 +340,22 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
 		config.Username, config.Password, config.Host, config.Port, config.Database, config.Charset)
 
+	var proxy Proxy
 	// 创建代理
 	if config.Proxy.Type != "" && config.Proxy.Type != ProxyTypeDirect {
 		pr.System("MySQL使用代理连接: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
 
-		proxy, err := ProxyFactory(config.Proxy)
+		var err error
+		proxy, err = ProxyFactory(config.Proxy)
 		if err != nil {
 			return nil, errors.Wrap(err, "创建代理失败")
 		}
-		defer proxy.Close()
 
 		// 对于SSH代理，创建隧道并更改连接地址
 		if config.Proxy.Type == ProxyTypeSSH {
 			localPort, err := proxy.CreateTunnel(config.Host, config.Port)
 			if err != nil {
+				proxy.Close()
 				return nil, errors.Wrap(err, "创建代理隧道失败")
 			}
 
@@ -381,28 +385,84 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 
 	// GORM配置
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: logger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			logger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  logLevel,
+				IgnoreRecordNotFoundError: true,
+				Colorful:                  true,
+			},
+		),
 		NamingStrategy: schema.NamingStrategy{
-			SingularTable: true, // 使用单数表名
+			SingularTable: true,
 		},
+		DisableForeignKeyConstraintWhenMigrating: true,
 	}
 
-	// 连接数据库
+	// 创建数据库连接
 	db, err := gorm.Open(mysql.Open(dsn), gormConfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "连接MySQL数据库失败: %s", dsn)
+		if proxy != nil {
+			proxy.Close()
+		}
+		return nil, errors.Wrap(err, "连接MySQL失败")
 	}
 
 	// 配置连接池
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, errors.Wrap(err, "获取底层SQL DB失败")
+		if proxy != nil {
+			proxy.Close()
+		}
+		return nil, errors.Wrap(err, "获取底层DB失败")
 	}
 
-	// 设置连接池参数
 	sqlDB.SetMaxIdleConns(config.MaxIdleConn)
 	sqlDB.SetMaxOpenConns(config.MaxOpenConn)
 	sqlDB.SetConnMaxLifetime(time.Duration(config.MaxLifeTime) * time.Second)
+
+	// 测试连接
+	if err = sqlDB.Ping(); err != nil {
+		if proxy != nil {
+			proxy.Close()
+		}
+		return nil, errors.Wrap(err, "测试MySQL连接失败")
+	}
+
+	// 添加代理关闭钩子
+	if proxy != nil {
+		db.Callback().Create().Before("gorm:create").Register("close_proxy_before_create", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+		db.Callback().Query().Before("gorm:query").Register("close_proxy_before_query", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+		db.Callback().Update().Before("gorm:update").Register("close_proxy_before_update", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+		db.Callback().Delete().Before("gorm:delete").Register("close_proxy_before_delete", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+		db.Callback().Row().Before("gorm:row").Register("close_proxy_before_row", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+		db.Callback().Raw().Before("gorm:raw").Register("close_proxy_before_raw", func(db *gorm.DB) {
+			if db.Statement.Error != nil {
+				proxy.Close()
+			}
+		})
+	}
 
 	pr.System("MySQL连接初始化成功: %s", config.Database)
 	return db, nil
@@ -435,11 +495,27 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 			// 使用SSH隧道
 			localPort, err := proxy.CreateTunnel(config.Host, config.Port)
 			if err != nil {
-				proxy.Close()
-				return nil, errors.Wrap(err, "创建SSH隧道失败")
+				// 如果端口转发失败，尝试使用直接连接
+				if strings.Contains(err.Error(), "administratively prohibited") {
+					pr.Warning("SSH服务器不支持端口转发，尝试使用直接连接")
+					// 直接使用原始地址，不使用隧道
+					options.Addr = fmt.Sprintf("%s:%d", config.Host, config.Port)
+					// 获取SSH客户端的网络拨号器
+					dialer, err := proxy.GetDialer()
+					if err != nil {
+						proxy.Close()
+						return nil, errors.Wrap(err, "获取代理拨号器失败")
+					}
+					options.Dialer = dialer
+					pr.System("Redis使用SSH直连: %s", options.Addr)
+				} else {
+					proxy.Close()
+					return nil, errors.Wrap(err, "创建SSH隧道失败")
+				}
+			} else {
+				options.Addr = fmt.Sprintf("127.0.0.1:%d", localPort)
+				pr.System("Redis通过SSH隧道连接: 127.0.0.1:%d -> %s:%d", localPort, config.Host, config.Port)
 			}
-			options.Addr = fmt.Sprintf("127.0.0.1:%d", localPort)
-			pr.System("Redis通过SSH隧道连接: 127.0.0.1:%d -> %s:%d", localPort, config.Host, config.Port)
 		} else {
 			// 使用拨号器
 			dialer, err := proxy.GetDialer()

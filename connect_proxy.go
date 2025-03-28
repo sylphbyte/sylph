@@ -5,11 +5,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,7 +65,15 @@ func ProxyFactory(config ProxyConfig) (Proxy, error) {
 
 	switch config.Type {
 	case ProxyTypeSSH:
-		return NewSSHProxy(config)
+		proxy, err := NewSSHProxy(config)
+		if err != nil {
+			return nil, err
+		}
+		// 连接SSH服务器
+		if err := proxy.Connect(); err != nil {
+			return nil, errors.Wrap(err, "连接SSH服务器失败")
+		}
+		return proxy, nil
 	case ProxyTypeSOCKS5:
 		return NewSOCKS5Proxy(config)
 	case ProxyTypeHTTP, ProxyTypeHTTPS:
@@ -98,117 +106,78 @@ func (p *DirectProxy) Close() error {
 	return nil
 }
 
-// SSHProxy SSH隧道代理
+// SSHProxy SSH代理
 type SSHProxy struct {
 	config         ProxyConfig
 	client         *ssh.Client
-	tunnels        map[string]int // 目标地址 -> 本地端口
 	tunnelListener map[string]net.Listener
-	lock           sync.Mutex
-	minPort        int // 最小可用端口
-	maxPort        int // 最大可用端口
+	tunnels        map[string]int
+	stopKeepAlive  chan struct{}
+	lock           sync.RWMutex
+	usePortForward bool // 是否使用端口转发
 }
 
 // NewSSHProxy 创建SSH代理
 func NewSSHProxy(config ProxyConfig) (*SSHProxy, error) {
-	// 验证配置
 	if config.Host == "" {
 		return nil, errors.New("SSH代理主机不能为空")
 	}
 	if config.Port <= 0 {
-		config.Port = 22 // 默认SSH端口
+		return nil, errors.New("SSH代理端口无效")
 	}
 
-	proxy := &SSHProxy{
+	return &SSHProxy{
 		config:         config,
-		tunnels:        make(map[string]int),
 		tunnelListener: make(map[string]net.Listener),
-		minPort:        10000, // 默认端口范围
-		maxPort:        20000,
-	}
-
-	// 连接SSH服务器
-	if err := proxy.connect(); err != nil {
-		return nil, err
-	}
-
-	return proxy, nil
+		tunnels:        make(map[string]int),
+		usePortForward: true, // 默认使用端口转发
+	}, nil
 }
 
-// connect 连接到SSH服务器
-func (p *SSHProxy) connect() error {
-	// 创建SSH配置
-	sshConfig := &ssh.ClientConfig{
-		User:            p.config.Username,
-		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 在生产环境中应使用ssh.FixedHostKey或其他安全方法
-		Timeout:         30 * time.Second,
+// CreateTunnel 创建隧道
+func (p *SSHProxy) CreateTunnel(targetHost string, targetPort int) (int, error) {
+	if p.client == nil {
+		return 0, errors.New("SSH客户端未连接")
 	}
 
-	// 添加认证方式
-	authMethodsAdded := false
-
-	if p.config.Password != "" {
-		pr.System("使用密码认证方式")
-		sshConfig.Auth = append(sshConfig.Auth, ssh.Password(p.config.Password))
-		authMethodsAdded = true
+	// 如果不使用端口转发，直接返回目标端口
+	if !p.usePortForward {
+		return targetPort, nil
 	}
 
-	// 如果提供了密钥文件，尝试使用密钥认证
-	if p.config.SSHKey != "" {
-		pr.System("使用SSH密钥文件: %s", p.config.SSHKey)
-
-		// 检查密钥文件是否存在
-		_, err := os.Stat(p.config.SSHKey)
-		if os.IsNotExist(err) {
-			// 尝试向后兼容，检查配置文件中是否使用了错误的字段名
-			pr.Warning("SSH密钥文件不存在: %s，尝试检查配置", p.config.SSHKey)
-			return errors.Errorf("SSH密钥文件不存在: %s，请检查配置文件中的ssh_key字段", p.config.SSHKey)
-		} else if err != nil {
-			return errors.Wrapf(err, "检查SSH密钥文件状态失败: %s", p.config.SSHKey)
-		}
-
-		key, err := ioutil.ReadFile(p.config.SSHKey)
-		if err != nil {
-			return errors.Wrapf(err, "读取SSH密钥文件失败: %s", p.config.SSHKey)
-		}
-		pr.System("成功读取SSH密钥文件，大小: %d字节", len(key))
-
-		signer, err := ssh.ParsePrivateKey(key)
-		if err != nil {
-			return errors.Wrapf(err, "解析SSH私钥失败: %s", p.config.SSHKey)
-		}
-		pr.System("成功解析SSH私钥")
-
-		sshConfig.Auth = append(sshConfig.Auth, ssh.PublicKeys(signer))
-		authMethodsAdded = true
-	} else {
-		pr.Warning("未指定SSH密钥文件，将尝试使用其他认证方式")
+	// 生成本地监听地址
+	addr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+	p.lock.Lock()
+	if listener, exists := p.tunnelListener[addr]; exists {
+		p.lock.Unlock()
+		// 如果隧道已存在，返回本地端口
+		localAddr := listener.Addr().(*net.TCPAddr)
+		return localAddr.Port, nil
 	}
+	p.lock.Unlock()
 
-	if !authMethodsAdded {
-		return errors.New("没有提供任何认证方式（密码或SSH密钥）")
-	}
-
-	pr.System("SSH配置中的认证方法数量: %d", len(sshConfig.Auth))
-
-	// 连接到SSH服务器
-	pr.System("正在连接SSH服务器 %s:%d...", p.config.Host, p.config.Port)
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", p.config.Host, p.config.Port), sshConfig)
+	// 在本地随机端口上监听
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "no supported methods remain") {
-			return errors.Wrapf(err, "SSH认证失败: 服务器不支持配置的认证方法，请检查密钥文件或认证方式")
-		}
-		if strings.Contains(errMsg, "unable to authenticate") {
-			return errors.Wrapf(err, "SSH认证失败: 认证凭据无效，请检查用户名、密码或密钥是否正确")
-		}
-		return errors.Wrapf(err, "连接SSH服务器失败: %s:%d", p.config.Host, p.config.Port)
+		return 0, errors.Wrap(err, "创建本地监听失败")
 	}
 
-	p.client = client
-	pr.System("成功连接到SSH代理服务器: %s:%d", p.config.Host, p.config.Port)
-	return nil
+	// 获取分配的本地端口
+	localAddr := listener.Addr().(*net.TCPAddr)
+	localPort := localAddr.Port
+
+	// 保存监听器
+	p.lock.Lock()
+	p.tunnelListener[addr] = listener
+	p.tunnels[addr] = 0
+	p.lock.Unlock()
+
+	pr.System("创建SSH隧道: 本地127.0.0.1:%d -> %s:%d", localPort, targetHost, targetPort)
+
+	// 启动转发
+	go p.forwardTunnel(targetHost, targetPort, listener)
+
+	return localPort, nil
 }
 
 // GetDialer 获取SSH代理拨号器
@@ -218,56 +187,235 @@ func (p *SSHProxy) GetDialer() (func(ctx context.Context, network, addr string) 
 	}
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		// 通过SSH连接创建到目标地址的连接
-		return p.client.Dial(network, addr)
+		// 如果不使用端口转发，直接通过SSH客户端连接
+		if !p.usePortForward {
+			return p.client.Dial(network, addr)
+		}
+
+		// 解析目标地址
+		host, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "解析地址失败: %s", addr)
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "解析端口失败: %s", portStr)
+		}
+
+		// 创建隧道
+		localPort, err := p.CreateTunnel(host, port)
+		if err != nil {
+			return nil, errors.Wrap(err, "创建隧道失败")
+		}
+
+		// 连接到本地端口
+		return net.Dial(network, fmt.Sprintf("127.0.0.1:%d", localPort))
 	}, nil
 }
 
-// CreateTunnel 创建SSH隧道
-func (p *SSHProxy) CreateTunnel(targetHost string, targetPort int) (int, error) {
+// Connect 连接到SSH服务器
+func (p *SSHProxy) Connect() error {
+	if p.client != nil {
+		return nil
+	}
+
+	// 创建SSH配置
+	config := &ssh.ClientConfig{
+		User:            p.config.Username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	// 设置认证方法
+	if p.config.SSHKey != "" {
+		// 使用SSH密钥认证
+		pr.System("使用SSH密钥文件: %s", p.config.SSHKey)
+
+		// 读取密钥文件
+		keyData, err := os.ReadFile(p.config.SSHKey)
+		if err != nil {
+			return errors.Wrapf(err, "读取SSH密钥文件失败: %s", p.config.SSHKey)
+		}
+		pr.System("成功读取SSH密钥文件，大小: %d字节", len(keyData))
+
+		// 解析密钥
+		signer, err := ssh.ParsePrivateKey(keyData)
+		if err != nil {
+			return errors.Wrap(err, "解析SSH私钥失败")
+		}
+		pr.System("成功解析SSH私钥")
+
+		// 添加到认证方法
+		config.Auth = []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		}
+	} else if p.config.Password != "" {
+		// 使用密码认证
+		config.Auth = []ssh.AuthMethod{
+			ssh.Password(p.config.Password),
+		}
+	} else {
+		return errors.New("未提供SSH认证方法")
+	}
+
+	pr.System("SSH配置中的认证方法数量: %d", len(config.Auth))
+
+	// 连接到SSH服务器
+	pr.System("正在连接SSH服务器 %s:%d...", p.config.Host, p.config.Port)
+	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", p.config.Host, p.config.Port), config)
+	if err != nil {
+		return errors.Wrapf(err, "连接SSH服务器失败: %s:%d", p.config.Host, p.config.Port)
+	}
+
+	p.client = client
+	pr.System("成功连接到SSH代理服务器: %s:%d", p.config.Host, p.config.Port)
+
+	// 启动保活
+	p.startKeepAlive()
+
+	// 尝试端口转发，如果失败则禁用
+	testListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return errors.Wrap(err, "测试本地监听失败")
+	}
+	testPort := testListener.Addr().(*net.TCPAddr).Port
+	testListener.Close()
+
+	// 尝试通过SSH创建到本地端口的连接
+	_, err = client.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
+	if err != nil && strings.Contains(err.Error(), "administratively prohibited") {
+		pr.Warning("SSH服务器不支持端口转发，将使用直接转发")
+		p.usePortForward = false
+	}
+
+	return nil
+}
+
+// startKeepAlive 启动SSH保活机制
+func (p *SSHProxy) startKeepAlive() {
+	if p.client == nil {
+		return
+	}
+
+	// 如果已有保活goroutine在运行，停止它
+	if p.stopKeepAlive != nil {
+		close(p.stopKeepAlive)
+	}
+
+	p.stopKeepAlive = make(chan struct{})
+
+	// 启动保活goroutine
+	go func() {
+		keepAliveTicker := time.NewTicker(30 * time.Second) // 每30秒发送一次保活包
+		defer keepAliveTicker.Stop()
+
+		for {
+			select {
+			case <-keepAliveTicker.C:
+				// 发送保活请求
+				_, _, err := p.client.SendRequest("keepalive@sylph", true, nil)
+				if err != nil {
+					pr.Warning("SSH保活失败: %v，尝试重新连接", err)
+					// 尝试重新连接
+					p.reconnect()
+					return
+				}
+				pr.System("已发送SSH保活请求")
+			case <-p.stopKeepAlive:
+				pr.System("停止SSH保活")
+				return
+			}
+		}
+	}()
+}
+
+// reconnect 重新连接SSH服务器
+func (p *SSHProxy) reconnect() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	// 生成目标地址标识
-	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-
-	// 检查是否已有隧道
-	if localPort, exists := p.tunnels[targetAddr]; exists {
-		return localPort, nil
+	// 停止保活
+	if p.stopKeepAlive != nil {
+		close(p.stopKeepAlive)
+		p.stopKeepAlive = nil
 	}
 
-	// 查找可用的本地端口
-	var listener net.Listener
-	var localPort int
-	var err error
+	// 关闭旧连接
+	if p.client != nil {
+		p.client.Close()
+		p.client = nil
+	}
 
-	// 尝试在端口范围内找到可用端口
-	for port := p.minPort; port <= p.maxPort; port++ {
-		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err == nil {
-			localPort = port
-			break
+	// 尝试重新连接
+	pr.System("尝试重新连接SSH服务器...")
+	err := p.Connect()
+	if err != nil {
+		pr.Error("重新连接SSH服务器失败: %v", err)
+	} else {
+		pr.System("成功重新连接到SSH服务器")
+
+		// 重建隧道
+		p.rebuildTunnels()
+	}
+}
+
+// rebuildTunnels 重建所有隧道
+func (p *SSHProxy) rebuildTunnels() {
+	// 保存原有隧道信息
+	oldTunnels := make(map[string]int)
+	for targetAddr, port := range p.tunnels {
+		oldTunnels[targetAddr] = port
+	}
+
+	// 清空旧隧道
+	for addr, listener := range p.tunnelListener {
+		if listener != nil {
+			listener.Close()
+			pr.System("关闭隧道: %s", addr)
 		}
 	}
+	p.tunnelListener = make(map[string]net.Listener)
+	p.tunnels = make(map[string]int)
 
-	if listener == nil {
-		return 0, errors.New("无法找到可用的本地端口创建SSH隧道")
+	// 重建隧道
+	for addr, localPort := range oldTunnels {
+		parts := strings.Split(addr, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		targetHost := parts[0]
+		targetPort := 0
+		fmt.Sscanf(parts[1], "%d", &targetPort)
+		if targetPort <= 0 {
+			continue
+		}
+
+		pr.System("重建隧道: 本地127.0.0.1:%d -> %s", localPort, addr)
+
+		// 尝试在相同端口上重建
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
+		if err != nil {
+			pr.Warning("在原端口重建隧道失败(目标: %s): %v", addr, err)
+			continue
+		}
+
+		// 保存隧道信息
+		p.tunnels[addr] = localPort
+		p.tunnelListener[addr] = listener
+
+		// 启动转发
+		go p.forwardTunnel(targetHost, targetPort, listener)
 	}
-
-	// 保存隧道信息
-	p.tunnels[targetAddr] = localPort
-	p.tunnelListener[targetAddr] = listener
-
-	// 启动转发
-	go p.forwardTunnel(targetHost, targetPort, listener)
-
-	pr.System("创建SSH隧道: 本地127.0.0.1:%d -> %s:%d", localPort, targetHost, targetPort)
-	return localPort, nil
 }
 
 // forwardTunnel 转发SSH隧道
 func (p *SSHProxy) forwardTunnel(targetHost string, targetPort int, listener net.Listener) {
 	defer listener.Close()
+
+	// 创建一个通道来跟踪活动连接
+	connDone := make(chan struct{})
+	var activeConns sync.WaitGroup
 
 	for {
 		// 接受本地连接
@@ -275,6 +423,9 @@ func (p *SSHProxy) forwardTunnel(targetHost string, targetPort int, listener net
 		if err != nil {
 			// 检查是否因为关闭而退出
 			if errors.Is(err, net.ErrClosed) {
+				// 等待所有连接完成
+				activeConns.Wait()
+				close(connDone)
 				return
 			}
 			pr.Error("接受本地连接失败: %v", err)
@@ -289,15 +440,64 @@ func (p *SSHProxy) forwardTunnel(targetHost string, targetPort int, listener net
 			continue
 		}
 
+		// 增加连接计数
+		addr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+		p.lock.Lock()
+		p.tunnels[addr]++
+		count := p.tunnels[addr]
+		p.lock.Unlock()
+		pr.Info("隧道连接计数增加: %s -> %d", addr, count)
+
+		// 增加活动连接计数
+		activeConns.Add(1)
+
 		// 双向转发数据
 		go func() {
-			defer local.Close()
-			defer remote.Close()
+			defer func() {
+				local.Close()
+				remote.Close()
+
+				// 减少连接计数
+				p.lock.Lock()
+				p.tunnels[addr]--
+				count := p.tunnels[addr]
+				p.lock.Unlock()
+				pr.Info("隧道连接计数减少: %s -> %d", addr, count)
+
+				// 减少活动连接计数
+				activeConns.Done()
+			}()
+
+			// 使用WaitGroup等待两个方向的数据传输完成
+			var wg sync.WaitGroup
+			wg.Add(2)
 
 			// 从本地到远程
-			go io.Copy(remote, local)
+			go func() {
+				defer wg.Done()
+				if _, err := io.Copy(remote, local); err != nil {
+					if !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+						pr.Error("本地到远程数据传输失败: %v", err)
+					}
+				}
+				// 关闭远程写入端，通知对方我们已完成发送
+				remote.(interface{ CloseWrite() error }).CloseWrite()
+			}()
+
 			// 从远程到本地
-			io.Copy(local, remote)
+			go func() {
+				defer wg.Done()
+				if _, err := io.Copy(local, remote); err != nil {
+					if !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+						pr.Error("远程到本地数据传输失败: %v", err)
+					}
+				}
+				// 关闭本地写入端，通知对方我们已完成发送
+				local.(interface{ CloseWrite() error }).CloseWrite()
+			}()
+
+			// 等待两个方向的数据传输完成
+			wg.Wait()
 		}()
 	}
 }
@@ -330,8 +530,23 @@ func (p *SSHProxy) Close() error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	// 停止保活
+	if p.stopKeepAlive != nil {
+		close(p.stopKeepAlive)
+		p.stopKeepAlive = nil
+	}
+
+	// 等待一段时间再关闭隧道，确保连接有时间完成
+	time.Sleep(500 * time.Millisecond)
+
 	// 关闭所有隧道监听器
 	for addr, listener := range p.tunnelListener {
+		// 检查是否有活动连接
+		if count := p.tunnels[addr]; count > 0 {
+			pr.Info("等待隧道连接完成: %s (活动连接: %d)", addr, count)
+			// 等待更长时间，让连接有机会完成
+			time.Sleep(2 * time.Second)
+		}
 		listener.Close()
 		delete(p.tunnelListener, addr)
 		delete(p.tunnels, addr)
