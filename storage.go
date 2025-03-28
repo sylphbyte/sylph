@@ -22,16 +22,16 @@ import (
 // MysqlConfig MySQL配置结构体
 type MysqlConfig struct {
 	Debug       bool        `yaml:"debug"`
-	LogMode     int         `yaml:"log_mode"`
+	LogMode     int         `yaml:"log_mode" mapstructure:"log_mode"`
 	Host        string      `yaml:"host"`
 	Port        int         `yaml:"port"`
 	Username    string      `yaml:"username"`
 	Password    string      `yaml:"password"`
 	Database    string      `yaml:"database"`
 	Charset     string      `yaml:"charset"`
-	MaxIdleConn int         `yaml:"max_idle_conn"`
-	MaxOpenConn int         `yaml:"max_open_conn"`
-	MaxLifeTime int         `yaml:"max_life_time"`
+	MaxIdleConn int         `yaml:"max_idle_conn" mapstructure:"max_idle_conn"`
+	MaxOpenConn int         `yaml:"max_open_conn" mapstructure:"max_open_conn"`
+	MaxLifeTime int         `yaml:"max_life_time" mapstructure:"max_life_time"`
 	Proxy       ProxyConfig `yaml:"proxy"` // 代理配置
 }
 
@@ -46,16 +46,16 @@ type RedisConfig struct {
 
 // ESConfig Elasticsearch配置结构体
 type ESConfig struct {
-	Addresses    []string    `yaml:"addresses"`     // ES服务器地址，如 ["http://localhost:9200"]
-	Username     string      `yaml:"username"`      // 用户名
-	Password     string      `yaml:"password"`      // 密码
-	CloudID      string      `yaml:"cloud_id"`      // 云ID，用于Elastic Cloud
-	APIKey       string      `yaml:"api_key"`       // API密钥
-	EnableHTTPS  bool        `yaml:"enable_https"`  // 是否启用HTTPS
-	SkipVerify   bool        `yaml:"skip_verify"`   // 是否跳过证书验证
-	MaxRetries   int         `yaml:"max_retries"`   // 最大重试次数
-	RetryTimeout int         `yaml:"retry_timeout"` // 重试超时时间(秒)
-	Proxy        ProxyConfig `yaml:"proxy"`         // 代理配置
+	Addresses    []string    `yaml:"addresses"`                                  // ES服务器地址，如 ["http://localhost:9200"]
+	Username     string      `yaml:"username"`                                   // 用户名
+	Password     string      `yaml:"password"`                                   // 密码
+	CloudID      string      `yaml:"cloud_id" mapstructure:"cloud_id"`           // 云ID，用于Elastic Cloud
+	APIKey       string      `yaml:"api_key" mapstructure:"api_key"`             // API密钥
+	EnableHTTPS  bool        `yaml:"enable_https" mapstructure:"enable_https"`   // 是否启用HTTPS
+	SkipVerify   bool        `yaml:"skip_verify" mapstructure:"skip_verify"`     // 是否跳过证书验证
+	MaxRetries   int         `yaml:"max_retries" mapstructure:"max_retries"`     // 最大重试次数
+	RetryTimeout int         `yaml:"retry_timeout" mapstructure:"retry_timeout"` // 重试超时时间(秒)
+	Proxy        ProxyConfig `yaml:"proxy"`                                      // 代理配置
 }
 
 // StorageConfigs 存储配置结构体
