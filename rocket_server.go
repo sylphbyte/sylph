@@ -2,6 +2,7 @@ package sylph
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -318,7 +319,7 @@ func (r *RocketConsumerServer) Boot() (err error) {
 	r.startTopicCountersCleaner()
 
 	// 启动消费者线程
-	r.Listen(r.ctx)
+	r.Listen()
 
 	pr.Green("RocketMQ consumer started successfully, group: %s, topics: %d",
 		r.consumer.TakeGroup(), len(r.consumer.Subscriptions))
@@ -360,9 +361,9 @@ func (r *RocketConsumerServer) Shutdown() error {
 // 实现逻辑:
 //   - 根据配置的并发消费者数量创建对应数量的接收goroutine
 //   - 每个goroutine独立运行Receive方法处理消息
-func (r *RocketConsumerServer) Listen(ctx Context) {
+func (r *RocketConsumerServer) Listen() {
 	for i := 0; i < r.consumer.TakeNum(); i++ {
-		go r.Receive(ctx, r.client)
+		go r.Receive(r.client)
 	}
 }
 
@@ -424,12 +425,14 @@ func (r *RocketConsumerServer) startTopicCountersCleaner() {
 //   - 动态批处理: 根据系统负载自适应调整批量大小
 //   - 主题分组: 相同主题的消息批量处理，提高效率
 //   - 差异化处理: 高频主题采用更激进的并行策略
-func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) {
+func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
+
+	ctx := context.Background()
 	// 创建用于批量处理的工作池 - 池大小根据CPU核心数动态调整
 	maxWorkers := MaxWorkers
-	if runtime.NumCPU() > 4 {
-		maxWorkers = runtime.NumCPU() * 2 // 更大的系统使用更多的工作线程
-	}
+	//if runtime.NumCPU() > 4 {
+	//	maxWorkers = runtime.NumCPU() * 2 // 更大的系统使用更多的工作线程
+	//}
 	workerPool := NewWorkerPool(maxWorkers)
 	workerPool.Start()
 
@@ -459,7 +462,7 @@ func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) 
 
 			// 重新启动消费者
 			time.Sleep(5 * time.Second)
-			go r.Receive(ctx, consumer)
+			go r.Receive(consumer)
 		}
 	}()
 
@@ -596,6 +599,7 @@ func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) 
 						workerPool.SubmitTask(func() {
 							for _, msg := range currentChunk {
 								func(view *mq.MessageView) {
+									sCtx := NewContext(Endpoint(fmt.Sprintf("rocket_%s", view.GetTopic())), view.GetTopic())
 									// 为每条消息添加panic恢复机制
 									defer func() {
 										if rec := recover(); rec != nil {
@@ -604,10 +608,11 @@ func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) 
 										}
 										// 无论处理成功与否，都确认消息处理完成
 										_ = consumer.Ack(ctx, view)
+										sCtx.Release()
 									}()
 
 									// 调用注册的处理函数处理消息
-									if err := handler(ctx, view); err != nil {
+									if err := handler(sCtx, view); err != nil {
 										pr.Error("Error in parallel handler: %v, topic: %s, msgId: %s",
 											err, view.GetTopic(), view.GetMessageId())
 									}
@@ -623,6 +628,8 @@ func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) 
 						for _, view := range messages {
 							// 使用闭包捕获当前消息视图
 							func(view *mq.MessageView) {
+								sCtx := NewContext(Endpoint(fmt.Sprintf("rocket_%s", view.GetTopic())), view.GetTopic())
+
 								// 处理潜在的异常
 								defer func() {
 									if rec := recover(); rec != nil {
@@ -632,10 +639,11 @@ func (r *RocketConsumerServer) Receive(ctx Context, consumer mq.SimpleConsumer) 
 
 									// 确认消息处理完成
 									_ = consumer.Ack(ctx, view)
+									sCtx.Release()
 								}()
 
 								// 处理消息
-								if err := handler(ctx, view); err != nil {
+								if err := handler(sCtx, view); err != nil {
 									pr.Error("Error handling message: %v, topic: %s, msgId: %s",
 										err, view.GetTopic(), view.GetMessageId())
 								}
