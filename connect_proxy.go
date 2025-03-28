@@ -34,12 +34,12 @@ const (
 
 // ProxyConfig 代理配置
 type ProxyConfig struct {
-	Type     ProxyType `yaml:"type"`     // 代理类型
-	Host     string    `yaml:"host"`     // 代理服务器地址
-	Port     int       `yaml:"port"`     // 代理服务器端口
-	Username string    `yaml:"username"` // 代理认证用户名
-	Password string    `yaml:"password"` // 代理认证密码
-	SSHKey   string    `yaml:"ssh_key"`  // SSH代理私钥路径(当type=ssh时使用)
+	Type     ProxyType `yaml:"type"`                           // 代理类型
+	Host     string    `yaml:"host"`                           // 代理服务器地址
+	Port     int       `yaml:"port"`                           // 代理服务器端口
+	Username string    `yaml:"username"`                       // 代理认证用户名
+	Password string    `yaml:"password"`                       // 代理认证密码
+	SSHKey   string    `yaml:"ssh_key" mapstructure:"ssh_key"` // SSH代理私钥路径(当type=ssh时使用)
 }
 
 // Proxy 代理管理器接口
