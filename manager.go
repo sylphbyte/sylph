@@ -248,8 +248,17 @@ func (sm *StorageManagerImpl) CloseAll(ctx Context) error {
 		}
 	}
 
+	// 关闭连接管理器
+	if err := GetStorageConnectionManager().Close(); err != nil {
+		errs = append(errs, errors.Wrap(err, "关闭连接管理器失败"))
+		pr.Warning("关闭连接管理器失败: %v", err)
+	} else {
+		pr.System("已关闭存储连接管理器")
+	}
+
+	// 如果有错误，返回第一个错误
 	if len(errs) > 0 {
-		return errors.Errorf("关闭存储时发生 %d 个错误", len(errs))
+		return errs[0]
 	}
 
 	return nil

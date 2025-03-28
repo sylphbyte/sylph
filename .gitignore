@@ -12,3 +12,5 @@ go.work
 .cursor
 /etc
 /tests
+/work
+/examples
