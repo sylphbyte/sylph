@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,28 +146,63 @@ func (p *SSHProxy) connect() error {
 	}
 
 	// 添加认证方式
+	authMethodsAdded := false
+
 	if p.config.Password != "" {
+		pr.System("使用密码认证方式")
 		sshConfig.Auth = append(sshConfig.Auth, ssh.Password(p.config.Password))
+		authMethodsAdded = true
 	}
 
 	// 如果提供了密钥文件，尝试使用密钥认证
 	if p.config.SSHKey != "" {
+		pr.System("使用SSH密钥文件: %s", p.config.SSHKey)
+
+		// 检查密钥文件是否存在
+		_, err := os.Stat(p.config.SSHKey)
+		if os.IsNotExist(err) {
+			// 尝试向后兼容，检查配置文件中是否使用了错误的字段名
+			pr.Warning("SSH密钥文件不存在: %s，尝试检查配置", p.config.SSHKey)
+			return errors.Errorf("SSH密钥文件不存在: %s，请检查配置文件中的ssh_key字段", p.config.SSHKey)
+		} else if err != nil {
+			return errors.Wrapf(err, "检查SSH密钥文件状态失败: %s", p.config.SSHKey)
+		}
+
 		key, err := ioutil.ReadFile(p.config.SSHKey)
 		if err != nil {
 			return errors.Wrapf(err, "读取SSH密钥文件失败: %s", p.config.SSHKey)
 		}
+		pr.System("成功读取SSH密钥文件，大小: %d字节", len(key))
 
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
-			return errors.Wrap(err, "解析SSH私钥失败")
+			return errors.Wrapf(err, "解析SSH私钥失败: %s", p.config.SSHKey)
 		}
+		pr.System("成功解析SSH私钥")
 
 		sshConfig.Auth = append(sshConfig.Auth, ssh.PublicKeys(signer))
+		authMethodsAdded = true
+	} else {
+		pr.Warning("未指定SSH密钥文件，将尝试使用其他认证方式")
 	}
 
+	if !authMethodsAdded {
+		return errors.New("没有提供任何认证方式（密码或SSH密钥）")
+	}
+
+	pr.System("SSH配置中的认证方法数量: %d", len(sshConfig.Auth))
+
 	// 连接到SSH服务器
+	pr.System("正在连接SSH服务器 %s:%d...", p.config.Host, p.config.Port)
 	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", p.config.Host, p.config.Port), sshConfig)
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no supported methods remain") {
+			return errors.Wrapf(err, "SSH认证失败: 服务器不支持配置的认证方法，请检查密钥文件或认证方式")
+		}
+		if strings.Contains(errMsg, "unable to authenticate") {
+			return errors.Wrapf(err, "SSH认证失败: 认证凭据无效，请检查用户名、密码或密钥是否正确")
+		}
 		return errors.Wrapf(err, "连接SSH服务器失败: %s:%d", p.config.Host, p.config.Port)
 	}
 
