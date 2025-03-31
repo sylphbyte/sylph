@@ -228,9 +228,8 @@ type RocketTaskRoutes map[ITaskName]RocketTaskHandler
 //	    SecretKey: "secret-key",
 //	}
 //	server := NewRocketConsumerServer(ctx, consumer, instance)
-func NewRocketConsumerServer(ctx Context, consumer RocketConsumer, instance RocketInstance) *RocketConsumerServer {
+func NewRocketConsumerServer(consumer RocketConsumer, instance RocketInstance) *RocketConsumerServer {
 	return &RocketConsumerServer{
-		ctx: ctx,
 		baseConsumerRocket: baseConsumerRocket{
 			consumer: consumer,
 			instance: instance,
@@ -243,7 +242,6 @@ func NewRocketConsumerServer(ctx Context, consumer RocketConsumer, instance Rock
 // RocketConsumerServer RocketMQ消费者服务器
 // 实现IServer接口，管理RocketMQ消费者
 type RocketConsumerServer struct {
-	ctx                Context          // 服务上下文
 	baseConsumerRocket                  // 基础消费者火箭
 	routes             RocketTaskRoutes // 任务路由
 	// 主题消息计数器，用于监控和优化
@@ -608,7 +606,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 										}
 										// 无论处理成功与否，都确认消息处理完成
 										_ = consumer.Ack(ctx, view)
-										sCtx.Release()
 									}()
 
 									// 调用注册的处理函数处理消息
@@ -639,7 +636,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 
 									// 确认消息处理完成
 									_ = consumer.Ack(ctx, view)
-									sCtx.Release()
 								}()
 
 								// 处理消息

@@ -212,6 +212,7 @@ func recycleContext(ctx *DefaultContext) {
 	ctx.logger = nil
 	ctx.event = nil
 	ctx.robotCache = nil
+	//d.ctxInternal = nil
 	atomic.StoreInt32(&ctx.activeTask, 0)
 
 	// 放回池中
@@ -833,19 +834,18 @@ func (d *DefaultContext) JwtClaim() (claim IJwtClaim) {
 // Release 释放上下文资源，归还对象池
 // 需要在上下文使用完毕后显式调用
 func (d *DefaultContext) Release() {
-	// 清理数据，避免内存泄漏
-	d.rwMutex.Lock()
-	for k := range d.dataCache {
-		delete(d.dataCache, k)
-	}
-	d.rwMutex.Unlock()
-
+	//// 清理数据，避免内存泄漏
+	//d.rwMutex.Lock()
+	//for k := range d.dataCache {
+	//	delete(d.dataCache, k)
+	//}
+	//d.rwMutex.Unlock()
+	//
 	// 重置字段
-	d.Header = nil
-	d.logger = nil
-	d.event = nil
-	d.robotCache = nil
-	d.ctxInternal = nil
+	//d.Header = nil
+	//d.logger = nil
+	//d.event = nil
+	//d.robotCache = nil
 
 	// 确保没有正在执行的异步任务
 	if atomic.LoadInt32(&d.activeTask) == 0 {

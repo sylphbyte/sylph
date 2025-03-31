@@ -1,6 +1,7 @@
 package sylph
 
 import (
+	"context"
 	"github.com/pkg/errors"
 )
 
@@ -48,7 +49,7 @@ type NormalProducer struct {
 func (n *NormalProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 
-	return NewSendRet(n.client.Send(ctx, msg))
+	return NewSendRet(n.client.Send(context.Background(), msg))
 }
 
 // SendBatch 批量发送消息
@@ -81,7 +82,7 @@ type DelayProducer struct {
 func (n DelayProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 	msg.SetDelayTimestamp(message.TakeDelayTime())
-	return NewSendRet(n.client.Send(ctx, msg))
+	return NewSendRet(n.client.Send(context.Background(), msg))
 }
 
 // SendBatch 批量发送延迟消息
@@ -114,7 +115,7 @@ type FifoProducer struct {
 func (n FifoProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
 	msg.SetDelayTimestamp(message.TakeDelayTime())
-	return NewSendRet(n.client.Send(ctx, msg))
+	return NewSendRet(n.client.Send(context.Background(), msg))
 }
 
 // SendBatch 批量发送FIFO消息
@@ -149,7 +150,7 @@ func (n TransactionProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg.SetDelayTimestamp(message.TakeDelayTime())
 
 	transaction := n.client.BeginTransaction()
-	resp, err := n.client.SendWithTransaction(ctx, msg, transaction)
+	resp, err := n.client.SendWithTransaction(context.Background(), msg, transaction)
 	if err != nil {
 		return NewSendRet(nil, err)
 	}

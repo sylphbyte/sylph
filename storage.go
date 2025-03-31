@@ -21,38 +21,41 @@ import (
 
 // MysqlConfig MySQL配置结构体
 type MysqlConfig struct {
-	Debug       bool   `yaml:"debug"`
-	LogMode     int    `yaml:"log_mode"`
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
-	Database    string `yaml:"database"`
-	Charset     string `yaml:"charset"`
-	MaxIdleConn int    `yaml:"max_idle_conn"`
-	MaxOpenConn int    `yaml:"max_open_conn"`
-	MaxLifeTime int    `yaml:"max_life_time"`
+	Debug       bool        `yaml:"debug"`
+	LogMode     int         `yaml:"log_mode" mapstructure:"log_mode"`
+	Host        string      `yaml:"host"`
+	Port        int         `yaml:"port"`
+	Username    string      `yaml:"username"`
+	Password    string      `yaml:"password"`
+	Database    string      `yaml:"database"`
+	Charset     string      `yaml:"charset"`
+	MaxIdleConn int         `yaml:"max_idle_conn" mapstructure:"max_idle_conn"`
+	MaxOpenConn int         `yaml:"max_open_conn" mapstructure:"max_open_conn"`
+	MaxLifeTime int         `yaml:"max_life_time" mapstructure:"max_life_time"`
+	Proxy       ProxyConfig `yaml:"proxy"` // 代理配置
 }
 
 // RedisConfig Redis配置结构体
 type RedisConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Password string `yaml:"password"`
-	Database int    `yaml:"database"`
+	Host     string      `yaml:"host"`
+	Port     int         `yaml:"port"`
+	Password string      `yaml:"password"`
+	Database int         `yaml:"database"`
+	Proxy    ProxyConfig `yaml:"proxy"` // 代理配置
 }
 
 // ESConfig Elasticsearch配置结构体
 type ESConfig struct {
-	Addresses    []string `yaml:"addresses"`     // ES服务器地址，如 ["http://localhost:9200"]
-	Username     string   `yaml:"username"`      // 用户名
-	Password     string   `yaml:"password"`      // 密码
-	CloudID      string   `yaml:"cloud_id"`      // 云ID，用于Elastic Cloud
-	APIKey       string   `yaml:"api_key"`       // API密钥
-	EnableHTTPS  bool     `yaml:"enable_https"`  // 是否启用HTTPS
-	SkipVerify   bool     `yaml:"skip_verify"`   // 是否跳过证书验证
-	MaxRetries   int      `yaml:"max_retries"`   // 最大重试次数
-	RetryTimeout int      `yaml:"retry_timeout"` // 重试超时时间(秒)
+	Addresses    []string    `yaml:"addresses"`                                  // ES服务器地址，如 ["http://localhost:9200"]
+	Username     string      `yaml:"username"`                                   // 用户名
+	Password     string      `yaml:"password"`                                   // 密码
+	CloudID      string      `yaml:"cloud_id" mapstructure:"cloud_id"`           // 云ID，用于Elastic Cloud
+	APIKey       string      `yaml:"api_key" mapstructure:"api_key"`             // API密钥
+	EnableHTTPS  bool        `yaml:"enable_https" mapstructure:"enable_https"`   // 是否启用HTTPS
+	SkipVerify   bool        `yaml:"skip_verify" mapstructure:"skip_verify"`     // 是否跳过证书验证
+	MaxRetries   int         `yaml:"max_retries" mapstructure:"max_retries"`     // 最大重试次数
+	RetryTimeout int         `yaml:"retry_timeout" mapstructure:"retry_timeout"` // 重试超时时间(秒)
+	Proxy        ProxyConfig `yaml:"proxy"`                                      // 代理配置
 }
 
 // StorageConfigs 存储配置结构体
@@ -62,6 +65,31 @@ type StorageConfigs struct {
 	ESGroup    map[string]ESConfig    `yaml:"es_group" mapstructure:"es_group"`
 }
 
+// Hash 计算MySQL配置的哈希值，用于标识相同配置
+func (c MysqlConfig) Hash() string {
+	return fmt.Sprintf("%s:%d:%s:%s:%s:%d:%d:%d:%s:%d:%s:%d:%s:%s",
+		c.Host, c.Port, c.Username, c.Password, c.Database,
+		c.MaxIdleConn, c.MaxOpenConn, c.MaxLifeTime, c.Charset, c.LogMode,
+		c.Proxy.Type, c.Proxy.Port, c.Proxy.Username, c.Proxy.Host)
+}
+
+// Hash 计算Redis配置的哈希值，用于标识相同配置
+func (c RedisConfig) Hash() string {
+	return fmt.Sprintf("%s:%d:%s:%d:%s:%d:%s:%s",
+		c.Host, c.Port, c.Password, c.Database,
+		c.Proxy.Type, c.Proxy.Port, c.Proxy.Username, c.Proxy.Host)
+}
+
+// Hash 计算ES配置的哈希值，用于标识相同配置
+func (c ESConfig) Hash() string {
+	addresses := strings.Join(c.Addresses, ",")
+	return fmt.Sprintf("%s:%s:%s:%s:%s:%t:%t:%d:%d:%s:%d:%s:%s",
+		addresses, c.Username, c.Password, c.CloudID, c.APIKey,
+		c.EnableHTTPS, c.SkipVerify, c.MaxRetries, c.RetryTimeout,
+		c.Proxy.Type, c.Proxy.Port, c.Proxy.Username, c.Proxy.Host)
+}
+
+// InitializeStorageConfigs 初始化存储服务
 func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedis, enabledES map[string]bool) (*StorageManagerImpl, error) {
 	// 创建存储管理器
 	storageManager := NewStorageManager()
@@ -73,7 +101,6 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 			continue
 		}
 
-		// 初始化MySQL连接
 		db, err := InitMysql(config)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化MySQL连接失败: %s", name)
@@ -95,7 +122,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 			continue
 		}
 
-		// 初始化Redis连接
+		// 从连接管理器获取连接
 		rds, err := InitRedis(config)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化Redis连接失败: %s", name)
@@ -118,7 +145,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 			continue
 		}
 
-		// 初始化ES连接
+		// 从连接管理器获取连接
 		es, err := InitES(config)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化Elasticsearch连接失败: %s", name)
@@ -173,9 +200,17 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 			MaxIdleConn: v.GetInt(fmt.Sprintf("mysql_group.%s.max_idle_conn", name)),
 			MaxOpenConn: v.GetInt(fmt.Sprintf("mysql_group.%s.max_open_conn", name)),
 			MaxLifeTime: v.GetInt(fmt.Sprintf("mysql_group.%s.max_life_time", name)),
+			Proxy: ProxyConfig{
+				Type:     ProxyType(v.GetString(fmt.Sprintf("mysql_group.%s.proxy.type", name))),
+				Host:     v.GetString(fmt.Sprintf("mysql_group.%s.proxy.host", name)),
+				Port:     v.GetInt(fmt.Sprintf("mysql_group.%s.proxy.port", name)),
+				Username: v.GetString(fmt.Sprintf("mysql_group.%s.proxy.username", name)),
+				Password: v.GetString(fmt.Sprintf("mysql_group.%s.proxy.password", name)),
+				SSHKey:   v.GetString(fmt.Sprintf("mysql_group.%s.proxy.ssh_key", name)),
+			},
 		}
 
-		// 初始化MySQL连接
+		// 从连接管理器获取连接
 		db, err := InitMysql(mysqlConfig)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化MySQL连接失败: %s", name)
@@ -205,9 +240,17 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 			Port:     v.GetInt(fmt.Sprintf("redis_group.%s.port", name)),
 			Password: v.GetString(fmt.Sprintf("redis_group.%s.password", name)),
 			Database: v.GetInt(fmt.Sprintf("redis_group.%s.database", name)),
+			Proxy: ProxyConfig{
+				Type:     ProxyType(v.GetString(fmt.Sprintf("redis_group.%s.proxy.type", name))),
+				Host:     v.GetString(fmt.Sprintf("redis_group.%s.proxy.host", name)),
+				Port:     v.GetInt(fmt.Sprintf("redis_group.%s.proxy.port", name)),
+				Username: v.GetString(fmt.Sprintf("redis_group.%s.proxy.username", name)),
+				Password: v.GetString(fmt.Sprintf("redis_group.%s.proxy.password", name)),
+				SSHKey:   v.GetString(fmt.Sprintf("redis_group.%s.proxy.ssh_key", name)),
+			},
 		}
 
-		// 初始化Redis连接
+		// 从连接管理器获取连接
 		rds, err := InitRedis(redisConfig)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化Redis连接失败: %s", name)
@@ -252,9 +295,17 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 			SkipVerify:   v.GetBool(fmt.Sprintf("es_group.%s.skip_verify", name)),
 			MaxRetries:   v.GetInt(fmt.Sprintf("es_group.%s.max_retries", name)),
 			RetryTimeout: v.GetInt(fmt.Sprintf("es_group.%s.retry_timeout", name)),
+			Proxy: ProxyConfig{
+				Type:     ProxyType(v.GetString(fmt.Sprintf("es_group.%s.proxy.type", name))),
+				Host:     v.GetString(fmt.Sprintf("es_group.%s.proxy.host", name)),
+				Port:     v.GetInt(fmt.Sprintf("es_group.%s.proxy.port", name)),
+				Username: v.GetString(fmt.Sprintf("es_group.%s.proxy.username", name)),
+				Password: v.GetString(fmt.Sprintf("es_group.%s.proxy.password", name)),
+				SSHKey:   v.GetString(fmt.Sprintf("es_group.%s.proxy.ssh_key", name)),
+			},
 		}
 
-		// 初始化ES连接
+		// 从连接管理器获取连接
 		es, err := InitES(esConfig)
 		if err != nil {
 			return nil, errors.Wrapf(err, "初始化Elasticsearch连接失败: %s", name)
@@ -279,6 +330,32 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 	// 构建DSN
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
 		config.Username, config.Password, config.Host, config.Port, config.Database, config.Charset)
+
+	// 创建代理
+	if config.Proxy.Type != "" && config.Proxy.Type != ProxyTypeDirect {
+		pr.System("MySQL使用代理连接: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+
+		proxy, err := ProxyFactory(config.Proxy)
+		if err != nil {
+			return nil, errors.Wrap(err, "创建代理失败")
+		}
+		defer proxy.Close()
+
+		// 对于SSH代理，创建隧道并更改连接地址
+		if config.Proxy.Type == ProxyTypeSSH {
+			localPort, err := proxy.CreateTunnel(config.Host, config.Port)
+			if err != nil {
+				return nil, errors.Wrap(err, "创建代理隧道失败")
+			}
+
+			// 更新DSN使用本地端口
+			dsn = fmt.Sprintf("%s:%s@tcp(127.0.0.1:%d)/%s?charset=%s&parseTime=True&loc=Local",
+				config.Username, config.Password, localPort, config.Database, config.Charset)
+
+			pr.System("MySQL通过SSH隧道连接: 127.0.0.1:%d -> %s:%d", localPort, config.Host, config.Port)
+		}
+		// 其他代理类型目前不支持MySQL
+	}
 
 	// 日志级别设置
 	var logLevel logger.LogLevel
@@ -328,20 +405,63 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 func InitRedis(config RedisConfig) (*redis.Client, error) {
 	pr.System("初始化Redis连接: %s:%d/%d", config.Host, config.Port, config.Database)
 
-	// 创建Redis客户端
-	redisClient := redis.NewClient(&redis.Options{
+	// 创建Redis客户端选项
+	options := &redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", config.Host, config.Port),
 		Password: config.Password,
 		DB:       config.Database,
-	})
+	}
+
+	var proxy Proxy
+	// 创建代理
+	if config.Proxy.Type != "" && config.Proxy.Type != ProxyTypeDirect {
+		pr.System("Redis使用代理连接: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+
+		var err error
+		proxy, err = ProxyFactory(config.Proxy)
+		if err != nil {
+			return nil, errors.Wrap(err, "创建代理失败")
+		}
+
+		// 根据代理类型设置连接选项
+		if config.Proxy.Type == ProxyTypeSSH {
+			// 使用SSH隧道
+			localPort, err := proxy.CreateTunnel(config.Host, config.Port)
+			if err != nil {
+				proxy.Close()
+				return nil, errors.Wrap(err, "创建SSH隧道失败")
+			}
+			options.Addr = fmt.Sprintf("127.0.0.1:%d", localPort)
+			pr.System("Redis通过SSH隧道连接: 127.0.0.1:%d -> %s:%d", localPort, config.Host, config.Port)
+		} else {
+			// 使用拨号器
+			dialer, err := proxy.GetDialer()
+			if err != nil {
+				proxy.Close()
+				return nil, errors.Wrap(err, "获取代理拨号器失败")
+			}
+			options.Dialer = dialer
+		}
+	}
+
+	// 创建Redis客户端
+	redisClient := redis.NewClient(options)
+
+	// 如果使用了代理，添加关闭钩子
+	if proxy != nil {
+		redisClient.AddHook(&RedisProxyHook{proxy: proxy})
+	}
 
 	// 测试连接
 	ctx := context.Background()
 	if _, err := redisClient.Ping(ctx).Result(); err != nil {
-		return nil, errors.Wrapf(err, "连接Redis失败: %s:%d", config.Host, config.Port)
+		if proxy != nil {
+			proxy.Close()
+		}
+		return nil, errors.Wrapf(err, "连接Redis失败: %s", options.Addr)
 	}
 
-	pr.System("Redis连接初始化成功: %s:%d/%d", config.Host, config.Port, config.Database)
+	pr.System("Redis连接初始化成功: %s", options.Addr)
 	return redisClient, nil
 }
 
@@ -372,14 +492,31 @@ func InitES(config ESConfig) (*elasticsearch.Client, error) {
 		esConfig.APIKey = config.APIKey
 	}
 
+	var proxy Proxy
 	// 配置HTTP传输
-	if config.EnableHTTPS || config.SkipVerify {
-		transport := &http.Transport{
+	if config.Proxy.Type != "" && config.Proxy.Type != ProxyTypeDirect {
+		pr.System("Elasticsearch使用代理连接: %s://%s:%d", config.Proxy.Type, config.Proxy.Host, config.Proxy.Port)
+
+		var err error
+		proxy, err = ProxyFactory(config.Proxy)
+		if err != nil {
+			return nil, errors.Wrap(err, "创建代理失败")
+		}
+
+		// 获取代理HTTP传输
+		transport, err := proxy.GetHTTPTransport(config.EnableHTTPS, config.SkipVerify)
+		if err != nil {
+			proxy.Close()
+			return nil, errors.Wrap(err, "获取代理HTTP传输失败")
+		}
+		esConfig.Transport = transport
+	} else if config.EnableHTTPS || config.SkipVerify {
+		// 不使用代理但需要TLS配置
+		esConfig.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: config.SkipVerify,
 			},
 		}
-		esConfig.Transport = transport
 	}
 
 	// 设置重试选项
@@ -396,15 +533,23 @@ func InitES(config ESConfig) (*elasticsearch.Client, error) {
 	// 创建ES客户端
 	client, err := elasticsearch.NewClient(esConfig)
 	if err != nil {
+		if proxy != nil {
+			proxy.Close()
+		}
 		return nil, errors.Wrap(err, "创建Elasticsearch客户端失败")
 	}
 
 	// 测试连接
 	info, err := client.Info()
 	if err != nil {
+		if proxy != nil {
+			proxy.Close()
+		}
 		return nil, errors.Wrap(err, "连接Elasticsearch失败")
 	}
 	defer info.Body.Close()
+
+	// 注意：这里没有处理代理的关闭问题，在实际使用中可能需要一个管理机制
 
 	pr.System("Elasticsearch连接初始化成功: %s", addressesStr)
 	return client, nil
