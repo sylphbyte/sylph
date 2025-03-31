@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/mysql"
