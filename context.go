@@ -89,6 +89,7 @@ type DataContext interface {
 	Get(key string) (val any, ok bool) // 获取指定键的值，第二个返回值表示键是否存在
 	GetString(key string) (string, bool)
 	GetInt(key string) (int, bool)
+	GetBool(key string) (bool, bool)
 
 	Set(key string, val any) // 设置指定键的值，如果键已存在则覆盖
 	MarkSet(key string, val any)
@@ -798,6 +799,15 @@ func (d *DefaultContext) GetInt(key string) (int, bool) {
 	return 0, b
 }
 
+// GetBool(key string) (bool, bool)
+func (d *DefaultContext) GetBool(key string) (bool, bool) {
+	get, b := d.Get(key)
+	if b {
+		return get.(bool), b
+	}
+	return false, b
+}
+
 func (d *DefaultContext) MarkSet(key string, val any) {
 	d.WithMark(key)
 	d.Set(key, val)
@@ -973,6 +983,16 @@ func (w *ctxWrapper) GetInt(key string) (int, bool) {
 	}
 	return 0, b
 }
+
+// GetBool(key string) (bool, bool)
+func (d *ctxWrapper) GetBool(key string) (bool, bool) {
+	get, b := d.Get(key)
+	if b {
+		return get.(bool), b
+	}
+	return false, b
+}
+
 func (w *ctxWrapper) Set(key string, val any) { w.parent.Set(key, val) }
 
 func (w *ctxWrapper) MarkSet(key string, val any) {
