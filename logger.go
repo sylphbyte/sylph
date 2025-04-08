@@ -100,6 +100,7 @@ func GetLoggerMessage() *LoggerMessage {
 //   - 归还后不要再使用该对象
 //   - 必须与GetLoggerMessage配对使用
 func ReleaseLoggerMessage(msg *LoggerMessage) {
+	return
 	if msg == nil {
 		return
 	}
@@ -569,7 +570,7 @@ func (l *Logger) asyncLog(level logrus.Level, message *LoggerMessage) {
 	go func() {
 		defer l.recover()
 		defer l.activeGoroutines.Dec()
-		//defer ReleaseLoggerMessage(clone)
+		defer ReleaseLoggerMessage(clone)
 
 		pr.Red("xxxx: %v\n", clone)
 		l.entry.WithFields(clone.Fields()).Log(level)
