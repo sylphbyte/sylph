@@ -160,7 +160,6 @@ func (f *LoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		buf.WriteByte(' ')
 		buf.WriteByte('|')
 		buf.WriteByte('|')
-		buf.WriteByte(' ')
 	}
 
 	buf.WriteByte(' ')
