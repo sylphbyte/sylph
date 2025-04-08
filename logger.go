@@ -2,7 +2,6 @@ package sylph
 
 import (
 	"fmt"
-	"github.com/sylphbyte/pr"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -572,7 +571,6 @@ func (l *Logger) asyncLog(level logrus.Level, message *LoggerMessage) {
 		defer l.activeGoroutines.Dec()
 		defer ReleaseLoggerMessage(clone)
 
-		pr.Red("xxxx: %v\n", clone)
 		l.entry.WithFields(clone.Fields()).Log(level)
 	}()
 }
