@@ -191,10 +191,10 @@ type LoggerMessage struct {
 func (m *LoggerMessage) MakeLoggerFormatMessage() (formatMessage *LoggerFormatMessage) {
 	return &LoggerFormatMessage{
 		Header: m.Header,
-		Marks:  m.Marks,
-		Info:   m.Data,
-		Error:  m.Error,
-		Stack:  m.Stack,
+		//Marks:  m.Marks,
+		Info:  m.Data,
+		Error: m.Error,
+		Stack: m.Stack,
 	}
 }
 

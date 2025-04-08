@@ -153,7 +153,14 @@ func (f *LoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	}
 
 	if message != nil {
+		buf.WriteByte('(')
 		buf.WriteString(message.Message)
+		buf.WriteByte(')')
+
+		buf.WriteByte(' ')
+		buf.WriteByte('|')
+		buf.WriteByte('|')
+		buf.WriteByte(' ')
 	}
 
 	buf.WriteByte(' ')
