@@ -2,6 +2,7 @@ package sylph
 
 import (
 	"fmt"
+	"github.com/sylphbyte/pr"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -246,7 +247,8 @@ func (m *LoggerMessage) Clone() *LoggerMessage {
 		return nil
 	}
 
-	clone := GetLoggerMessage()
+	//clone := GetLoggerMessage()
+	clone := &LoggerMessage{}
 	// 直接复制简单字段
 	clone.Location = m.Location
 	clone.Message = m.Message
@@ -567,8 +569,9 @@ func (l *Logger) asyncLog(level logrus.Level, message *LoggerMessage) {
 	go func() {
 		defer l.recover()
 		defer l.activeGoroutines.Dec()
-		defer ReleaseLoggerMessage(clone)
+		//defer ReleaseLoggerMessage(clone)
 
+		pr.Red("xxxx: %v\n", clone)
 		l.entry.WithFields(clone.Fields()).Log(level)
 	}()
 }
