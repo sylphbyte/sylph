@@ -485,10 +485,10 @@ func (d *DefaultContext) robotHeader() map[string]interface{} {
 	// 创建缓存并返回
 	h := map[string]interface{}{
 		"Marks":   d.TakeMarks(),
-		"TraceId": traceId,
-		"Path":    d.Header.PathVal,
-		"Command": "grep " + traceId + " /wider-logs/" + timeStr + "/" + string(d.Header.EndpointVal) + "." + hourStr + ".*.log",
-		"Ip":      d.Header.IPVal,
+		"TraceId": "`" + traceId + "`",
+		"Path":    "`" + d.Header.PathVal + "`",
+		"Command": "`grep " + traceId + " /wider-logs/" + timeStr + "/" + string(d.Header.EndpointVal) + "." + hourStr + ".*.log`",
+		"Ip":      "`" + d.Header.IPVal + "`",
 	}
 
 	d.robotCache = &h
