@@ -35,9 +35,9 @@ import (
 //	logger.WithField("trace_id", traceId).Info("处理请求")
 type Header struct {
 	EndpointVal Endpoint `json:"endpoint"`           // 服务端点名称
-	MarkVal     string   `json:"x_mark,omitempty"`   // 自定义标记
-	RefVal      string   `json:"x_ref,omitempty"`    // 来源引用，用于追踪请求来源
-	PathVal     string   `json:"x_path,omitempty"`   // 当前路径，表示请求的路径
+	MarkVal     string   `json:"@mark,omitempty"`    // 自定义标记
+	RefVal      string   `json:"@ref,omitempty"`     // 来源引用，用于追踪请求来源
+	PathVal     string   `json:"@path,omitempty"`    // 当前路径，表示请求的路径
 	TraceIdVal  string   `json:"trace_id,omitempty"` // 跟踪ID，用于请求追踪
 
 	IPVal string `json:"ip,omitempty"` // 客户端IP地址

@@ -1,6 +1,8 @@
 package sylph
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -196,7 +198,7 @@ func (a *AsyncLogger) GetDropCount() int64 {
 }
 
 // Close 关闭异步日志处理器
-func (a *AsyncLogger) Close() {
+func (a *AsyncLogger) Close() error {
 	// 通知工作协程准备关闭
 	close(a.done)
 
@@ -216,6 +218,13 @@ func (a *AsyncLogger) Close() {
 
 	// 关闭日志通道，确保所有工作协程退出
 	close(a.logCh)
+
+	// 关闭内部logger
+	if closer, ok := a.logger.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+
+	return nil
 }
 
 // DisableFallback 禁用队列满时的降级处理
@@ -252,6 +261,78 @@ func (a *AsyncLogger) Panic(message *LoggerMessage) {
 
 func (a *AsyncLogger) Error(message *LoggerMessage, err error) {
 	a.enqueueOrFallback(logrus.ErrorLevel, message, err)
+}
+
+// 实现简化API方法
+func (a *AsyncLogger) Infof(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Info(msg)
+}
+
+func (a *AsyncLogger) Tracef(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Trace(msg)
+}
+
+func (a *AsyncLogger) Debugf(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Debug(msg)
+}
+
+func (a *AsyncLogger) Warnf(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Warn(msg)
+}
+
+func (a *AsyncLogger) Errorf(err error, format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Error(msg, err)
+}
+
+func (a *AsyncLogger) Fatalf(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Fatal(msg)
+}
+
+func (a *AsyncLogger) Panicf(format string, args ...interface{}) {
+	msg := NewLoggerMessage()
+	msg.Message = fmt.Sprintf(format, args...)
+	a.Panic(msg)
+}
+
+// IsClosed 检查日志记录器是否已关闭
+// 直接委托给内部logger
+func (a *AsyncLogger) IsClosed() bool {
+	if closer, ok := a.logger.(interface{ IsClosed() bool }); ok {
+		return closer.IsClosed()
+	}
+	return false
+}
+
+// WithContext 设置上下文
+// 创建新的AsyncLogger实例，包装具有新上下文的内部logger
+func (a *AsyncLogger) WithContext(ctx context.Context) ILogger {
+	if ctx == nil {
+		return a
+	}
+
+	// 获取内部logger的上下文版本
+	innerWithCtx := a.logger.WithContext(ctx)
+
+	// 创建新的异步包装器
+	return NewAsyncLogger(
+		innerWithCtx,
+		cap(a.logCh),
+		WithWorkers(a.workers),
+		WithFallback(a.fallbackLog),
+		WithFlushTimeout(a.flushTimeout),
+	)
 }
 
 // enqueueOrFallback 将日志加入队列或降级为同步处理

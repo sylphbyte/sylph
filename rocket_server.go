@@ -434,22 +434,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 	workerPool := NewWorkerPool(maxWorkers)
 	workerPool.Start()
 
-	// 消息视图对象池
-	// 用于减少内存分配和GC压力
-	messageViewPool := sync.Pool{
-		New: func() interface{} {
-			return make([]*mq.MessageView, 0, r.consumer.TakeMaxMessageNum())
-		},
-	}
-
-	// 创建消息反馈器对象池
-	// 用于跟踪消息处理状态
-	ackResultPool := sync.Pool{
-		New: func() interface{} {
-			return make([]bool, 0, r.consumer.TakeMaxMessageNum())
-		},
-	}
-
 	// 添加恢复机制，确保消费者不会因为一个错误而停止
 	// 如果发生panic，记录错误并重启消费者
 	defer func() {
@@ -470,10 +454,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 
 	// 主循环优化：使用滑动窗口来平衡吞吐量和延迟
 	for {
-		// 从对象池获取预分配的切片
-		msgViewsSlice := messageViewPool.Get().([]*mq.MessageView)
-		msgViewsSlice = msgViewsSlice[:0]
-
 		// 接收消息前记录时间点，用于监控性能
 		startTime := time.Now()
 
@@ -513,7 +493,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		// 如果没有消息，短暂休眠避免CPU空转
 		if len(mvs) == 0 {
 			time.Sleep(100 * time.Millisecond)
-			messageViewPool.Put(msgViewsSlice)
 			continue
 		}
 
@@ -523,17 +502,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		// 先收集相同主题的消息，以便批量处理
 		// 同一主题的消息通常有相似的处理逻辑，批量处理更高效
 		messagesByTopic := make(map[string][]*mq.MessageView)
-
-		// 获取预分配结果数组
-		ackResults := ackResultPool.Get().([]bool)
-		if cap(ackResults) < len(mvs) {
-			ackResults = make([]bool, len(mvs))
-		} else {
-			ackResults = ackResults[:len(mvs)]
-			for i := range ackResults {
-				ackResults[i] = false
-			}
-		}
 
 		// 按主题对消息进行分组
 		for _, view := range mvs {
@@ -652,11 +620,6 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 
 		// 等待所有主题处理完成
 		processingWg.Wait()
-
-		// 将切片归还到对象池
-		// 减少内存分配和GC压力
-		messageViewPool.Put(msgViewsSlice)
-		ackResultPool.Put(ackResults)
 
 		// 动态调整批处理大小
 		// 根据当前批处理性能自适应调整批量大小
