@@ -1,6 +1,7 @@
 package sylph
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -577,47 +578,30 @@ type IRobot interface {
 //	    logger.Error(sylph.NewLoggerMessage("操作失败").WithField("operation", "update"), err)
 //	}
 type ILogger interface {
-	// Info 记录信息级别日志
-	// 参数:
-	//   - message: 日志消息对象
+	// 标准日志方法 - 结构化日志
 	Info(message *LoggerMessage)
-
-	// Trace 记录跟踪级别日志
-	// 参数:
-	//   - message: 日志消息对象
 	Trace(message *LoggerMessage)
-
-	// Debug 记录调试级别日志
-	// 参数:
-	//   - message: 日志消息对象
 	Debug(message *LoggerMessage)
-
-	// Warn 记录警告级别日志
-	// 参数:
-	//   - message: 日志消息对象
 	Warn(message *LoggerMessage)
-
-	// Error 记录错误级别日志
-	// 参数:
-	//   - message: 日志消息对象
-	//   - err: 错误对象
 	Error(message *LoggerMessage, err error)
-
-	// Fatal 记录致命级别日志
-	// 参数:
-	//   - message: 日志消息对象
-	//
-	// 注意事项:
-	//   - 此方法记录日志后可能会导致程序退出
 	Fatal(message *LoggerMessage)
-
-	// Panic 记录恐慌级别日志
-	// 参数:
-	//   - message: 日志消息对象
-	//
-	// 注意事项:
-	//   - 此方法记录日志后会调用panic()
 	Panic(message *LoggerMessage)
+
+	// 简化API - 格式化字符串
+	Infof(format string, args ...interface{})
+	Tracef(format string, args ...interface{})
+	Debugf(format string, args ...interface{})
+	Warnf(format string, args ...interface{})
+	Errorf(err error, format string, args ...interface{})
+	Fatalf(format string, args ...interface{})
+	Panicf(format string, args ...interface{})
+
+	// 资源管理
+	Close() error
+	IsClosed() bool
+
+	// 上下文支持
+	WithContext(ctx context.Context) ILogger
 }
 
 // RecoverFunc 定义恢复函数类型

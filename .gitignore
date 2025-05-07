@@ -13,3 +13,5 @@ go.work
 /etc
 /tests
 /work
+/tasks
+*.out

@@ -672,8 +672,8 @@ func (d *DefaultContext) SendInfo(title string, fields ...map[string]interface{}
 // makeLoggerMessage 创建日志消息对象
 // 将上下文信息整合到日志消息中
 func (d *DefaultContext) makeLoggerMessage(location string, msg string, data any) *LoggerMessage {
-	// 从对象池获取并初始化对象
-	message := GetLoggerMessage() // 使用logger.go中定义的全局函数
+	// 创建新的消息对象
+	message := NewLoggerMessage()
 	message.Header = d.Header
 	message.Marks = d.TakeMarks()
 	message.Location = location
