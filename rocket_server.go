@@ -290,8 +290,7 @@ type RocketConsumerServer struct {
 	routes             RocketTaskRoutes // 任务路由
 
 	// 并发控制
-	semaphore   chan struct{} // 控制最大并发goroutine数
-	activeCount int64         // 当前活跃的goroutine数量
+	semaphore chan struct{} // 控制最大并发goroutine数
 
 	// 生命周期管理
 	ctx         context.Context    // 服务上下文
