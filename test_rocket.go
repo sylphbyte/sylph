@@ -8,80 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	mq "github.com/apache/rocketmq-clients/golang/v5"
 	"gopkg.in/yaml.v3"
 )
-
-// 测试配置加载和基本功能
-func TestRocketConfig() {
-	// 1. 加载配置文件
-	rocketConfig, err := loadRocketConfig("etc/service_rocket.yaml")
-	if err != nil {
-		fmt.Printf("加载配置文件失败: %v\n", err)
-		return
-	}
-
-	// 2. 打印配置信息
-	printRocketConfig(rocketConfig)
-
-	// 3. 测试生产者和消费者
-	instance := rocketConfig.RocketGroup["saas"]
-	if len(instance.Topics) == 0 {
-		fmt.Println("没有配置任何主题")
-		return
-	}
-
-	// 演示创建生产者
-	topic := instance.Topics[0]
-	fmt.Printf("测试主题: %s (类型: %s)\n", topic.Topic, topic.Kind.Name())
-
-	producer := NewRocketProducer(topic, instance)
-	err = producer.Boot()
-	if err != nil {
-		fmt.Printf("启动生产者失败: %v\n", err)
-		return
-	}
-	fmt.Println("生产者启动成功")
-
-	// 创建并启动消费者（如果有相应的消费者配置）
-	var consumerServer *RocketConsumerServer
-	for _, consumer := range instance.Consumers {
-		// 查找匹配当前主题的消费者
-		for _, sub := range consumer.Subscriptions {
-			if sub.Topic == topic.Topic {
-				consumerServer = NewRocketConsumerServer(consumer, instance)
-				// 注册消息处理函数
-				consumerServer.RegisterRoute(Topic(topic.Topic), func(ctx Context, view *mq.MessageView) error {
-					fmt.Printf("收到消息: [%s] %s\n", view.GetTag(), string(view.GetBody()))
-					return nil
-				})
-
-				err = consumerServer.Boot()
-				if err != nil {
-					fmt.Printf("启动消费者失败: %v\n", err)
-				} else {
-					fmt.Printf("消费者 %s 启动成功\n", consumer.Group)
-					// 启动监听
-					go consumerServer.Listen()
-				}
-				break
-			}
-		}
-	}
-
-	// 发送测试消息
-	sendTestMessage(producer)
-
-	// 等待程序终止信号
-	waitForSignal()
-
-	// 关闭资源
-	if consumerServer != nil {
-		_ = consumerServer.Shutdown()
-		fmt.Println("消费者已关闭")
-	}
-	fmt.Println("测试完成")
-}
 
 // 加载RocketMQ配置
 func loadRocketConfig(configPath string) (*RocketYaml, error) {
@@ -193,9 +121,4 @@ func defaultIfEmpty(s, defaultValue string) string {
 		return defaultValue
 	}
 	return s
-}
-
-// 主函数，运行测试
-func main() {
-	TestRocketConfig()
 }
