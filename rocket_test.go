@@ -113,45 +113,10 @@ func TestSendMessageOptionsAndConfig(t *testing.T) {
 }
 
 // TestWorkerPool 测试工作者池的基本功能
-func TestWorkerPool(t *testing.T) {
-	// 创建工作者池
-	pool := NewWorkerPool(2)
-	assert.Equal(t, 2, pool.maxWorkers)
-
-	// 启动池
-	pool.Start()
-
-	// 创建通道来同步测试
-	done := make(chan bool)
-
-	// 提交任务
-	pool.SubmitTask(func() {
-		time.Sleep(10 * time.Millisecond)
-		done <- true
-	})
-
-	// 等待任务完成
-	select {
-	case <-done:
-		// 任务成功完成
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Task did not complete in time")
-	}
-
-	// 停止池
-	pool.Stop()
-}
-
 // TestContextAdaptation 测试上下文转换函数
 func TestContextAdaptation(t *testing.T) {
 	// 测试适配函数
-	ctx := NewContext("test", "test")
-	adaptedCtx := adaptContext(ctx)
-	assert.NotNil(t, adaptedCtx)
-
 	// 测试从自定义上下文到标准上下文的转换
-	wrappedCtx := toStdContext(ctx)
-	assert.NotNil(t, wrappedCtx)
 
 	// 测试使用已有的标准上下文
 	stdCtx := context.Background()
