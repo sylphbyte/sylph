@@ -72,6 +72,7 @@ type RocketConsumer struct {
 	MaxMessageNum     int32        `yaml:"max_message_num" mapstructure:"max_message_num"`       // 最大消息数
 	InvisibleDuration int          `yaml:"invisible_duration" mapstructure:"invisible_duration"` // 消息不可见时间(秒)
 	Subscriptions     RocketTopics `yaml:"subscriptions" mapstructure:"subscriptions"`           // 订阅的主题列表
+	UseGroup          bool         `yaml:"use_group" mapstructure:"use_group"`                   // 是否使用组名作为主题名
 }
 
 // TakeGroup 获取消费者组名
@@ -199,7 +200,7 @@ type RocketTaskHandler func(ctx Context, view *mq.MessageView) (err error)
 
 // RocketTaskRoutes 任务路由映射
 // 任务名称到处理函数的映射
-type RocketTaskRoutes map[ITaskName]RocketTaskHandler
+type RocketTaskRoutes map[string]RocketTaskHandler
 
 // NewRocketConsumerServer 创建新的RocketMQ消费者服务器
 // 初始化RocketMQ消费者服务器
@@ -272,7 +273,7 @@ func (r *RocketConsumerServer) Name() string {
 //	    return nil
 //	})
 func (r *RocketConsumerServer) RegisterRoute(topic ITaskName, handler RocketTaskHandler) {
-	r.routes[topic] = handler
+	r.routes[topic.Name()] = handler
 }
 
 // Boot 启动服务
@@ -518,9 +519,15 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		// 使用WaitGroup确保所有主题的消息都处理完毕
 		var processingWg sync.WaitGroup
 		for topic, messages := range messagesByTopic {
-			topicName := Topic(topic)
-			handler, ok := r.routes[topicName]
+			var topicName Topic
+			// 支持 组服务 与 主题服务
+			if r.consumer.UseGroup {
+				topicName = Topic(r.consumer.TakeGroup())
+			} else {
+				topicName = Topic(topic)
+			}
 
+			handler, ok := r.routes[topicName.Name()]
 			// 主题没有对应的处理器，记录警告并确认消息
 			if !ok || handler == nil {
 				pr.Yellow("Consumer no handler for topic: %s, group: %s, message count: %d",
