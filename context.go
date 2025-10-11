@@ -211,7 +211,6 @@ func recycleContext(ctx *DefaultContext) {
 	// 重置状态
 	ctx.Header = nil
 	ctx.logger = nil
-	ctx.event = nil
 	ctx.robotCache = nil
 	//d.ctxInternal = nil
 	atomic.StoreInt32(&ctx.activeTask, 0)
@@ -253,7 +252,6 @@ func NewContext(endpoint Endpoint, path string) Context {
 
 	ctx.StoreHeader(header)
 	ctx.logger = _loggerManager.Receive(string(endpoint))
-	ctx.event = nil // 懒加载
 	ctx.robotCache = nil
 
 	// 确保数据映射初始化
@@ -281,7 +279,6 @@ func NewContext(endpoint Endpoint, path string) Context {
 //   - Header: 请求头信息，包含端点、路径、追踪ID等
 //   - Marks: 自定义标记列表，用于请求分类和追踪
 //   - logger: 日志记录器，用于记录不同级别的日志
-//   - event: 事件系统，用于发布和订阅事件
 //   - robotCache: 机器人通知缓存，用于系统通知
 //   - activeTask: 当前活跃任务计数，用于追踪异步任务
 //
@@ -305,7 +302,6 @@ type DefaultContext struct {
 	Header      *Header                 `json:"header"` // 请求头信息
 	Marks       []string                `json:"marks"`  // 自定义标记
 	logger      ILogger                 // 日志记录器
-	event       *event                  // 事件系统（懒加载）
 	robotCache  *map[string]interface{} // 机器人通知缓存
 	activeTask  int32                   // 当前活跃任务计数（原子操作）
 }
@@ -346,7 +342,6 @@ func (d *DefaultContext) WithTimeout(duration time.Duration) (timeoutCtx Context
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		event:       d.event,
 		robotCache:  d.robotCache,
 	}, cancel
 }
@@ -377,7 +372,6 @@ func (d *DefaultContext) WithValue(key, val any) Context {
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		event:       d.event,
 		robotCache:  d.robotCache,
 	}
 }
@@ -502,41 +496,6 @@ func (d *DefaultContext) recover() {
 			"stack": takeStack(),
 		})
 	}
-}
-
-// takeEvent 获取事件系统，如果不存在则创建（懒加载）
-func (d *DefaultContext) takeEvent() *event {
-	if d.event == nil {
-		d.event = newEvent()
-	}
-	return d.event
-}
-
-// On 订阅事件
-func (d *DefaultContext) On(eventName string, handlers ...EventHandler) {
-	d.takeEvent().On(eventName, handlers...)
-}
-
-// OffEvent 取消订阅事件
-func (d *DefaultContext) OffEvent(eventName string) {
-	d.takeEvent().Off(eventName)
-}
-
-// Emit 触发事件（同步执行）
-func (d *DefaultContext) Emit(eventName string, payload interface{}) {
-	d.takeEvent().Emit(d, eventName, payload)
-}
-
-// AsyncEmit 异步触发事件(不等待)
-// 启动处理程序但不等待其完成
-func (d *DefaultContext) AsyncEmit(eventName string, payload interface{}) {
-	d.takeEvent().AsyncEmitNoWait(d, eventName, payload)
-}
-
-// AsyncEmitAndWait 异步触发事件并等待完成
-// 启动处理程序并等待所有处理完成
-func (d *DefaultContext) AsyncEmitAndWait(eventName string, payload interface{}) {
-	d.takeEvent().AsyncEmit(d, eventName, payload)
 }
 
 // increaseActiveTask 增加活跃任务计数
@@ -760,7 +719,6 @@ func (d *DefaultContext) Clone() Context {
 	newCtx.ctxInternal = context.Background()
 	newCtx.StoreHeader(d.Header.Clone())
 	newCtx.logger = d.logger
-	newCtx.event = nil      // 懒加载，不复制
 	newCtx.robotCache = nil // 不复制缓存
 
 	// 初始化空的数据存储，不复制原有数据
@@ -856,7 +814,6 @@ func (d *DefaultContext) Release() {
 	// 重置字段
 	//d.Header = nil
 	//d.logger = nil
-	//d.event = nil
 	//d.robotCache = nil
 
 	// 确保没有正在执行的异步任务
@@ -1056,7 +1013,6 @@ func (d *DefaultContext) WithDeadline(deadline time.Time) (deadlineCtx Context, 
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		event:       d.event,
 		robotCache:  d.robotCache,
 	}, cancel
 }
@@ -1081,7 +1037,6 @@ func (d *DefaultContext) WithCancel() (cancelCtx Context, cancel context.CancelF
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		event:       d.event,
 		robotCache:  d.robotCache,
 	}, cancel
 }
@@ -1107,7 +1062,6 @@ func (d *DefaultContext) WithCancelCause() (cancelCtx Context, cancel context.Ca
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		event:       d.event,
 		robotCache:  d.robotCache,
 	}, cancel
 }

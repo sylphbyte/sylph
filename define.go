@@ -621,18 +621,6 @@ type ILogger interface {
 //	}()
 type RecoverFunc func()
 
-// EventHandler 定义事件处理器函数类型
-// 用于注册事件的处理逻辑，实现事件驱动架构
-//
-// 使用示例:
-//
-//	eventBus.Subscribe("user.created", func(ctx sylph.Context, payload interface{}) {
-//	    user := payload.(User)
-//	    ctx.Logger().Info(sylph.NewLoggerMessage("新用户创建").WithField("user_id", user.ID))
-//	    // 处理用户创建事件
-//	})
-type EventHandler func(ctx Context, payload interface{})
-
 // Handler 定义通用处理器函数类型
 // 用于处理HTTP请求或其他类型的请求
 //
