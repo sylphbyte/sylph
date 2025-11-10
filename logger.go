@@ -14,13 +14,13 @@ import (
 // 直接使用这一个消息类型处理所有日志场景
 type LoggerMessage struct {
 	Header   *Header                `json:"header,omitempty"` // 请求头信息
-	Marks    map[string]interface{} `json:"-"`                // 标记信息
+	Marks    map[string]any `json:"-"`                // 标记信息
 	Location string                 `json:"-"`                // 代码位置
 	Message  string                 `json:"-"`                // 日志消息
 	Data     any                    `json:"data,omitempty"`   // 数据内容
 	Error    string                 `json:"error,omitempty"`  // 错误信息
 	Stack    string                 `json:"stack,omitempty"`  // 堆栈信息
-	Extra    map[string]interface{} `json:"extra,omitempty"`  // 扩展字段
+	Extra    map[string]any `json:"extra,omitempty"`  // 扩展字段
 }
 
 // NewLoggerMessage 创建新的日志消息对象
@@ -31,16 +31,16 @@ func NewLoggerMessage() *LoggerMessage {
 
 // WithField 添加单个数据字段
 // 链式调用API，使用更便捷
-func (m *LoggerMessage) WithField(key string, value interface{}) *LoggerMessage {
+func (m *LoggerMessage) WithField(key string, value any) *LoggerMessage {
 	if m.Data == nil {
-		m.Data = make(map[string]interface{})
+		m.Data = make(map[string]any)
 	}
 
-	if data, ok := m.Data.(map[string]interface{}); ok {
+	if data, ok := m.Data.(map[string]any); ok {
 		data[key] = value
 	} else {
 		// 如果当前Data不是map，创建新map并保留原值
-		newData := map[string]interface{}{
+		newData := map[string]any{
 			"_previous": m.Data,
 			key:         value,
 		}
@@ -51,7 +51,7 @@ func (m *LoggerMessage) WithField(key string, value interface{}) *LoggerMessage 
 }
 
 // WithFields 批量添加数据字段
-func (m *LoggerMessage) WithFields(fields map[string]interface{}) *LoggerMessage {
+func (m *LoggerMessage) WithFields(fields map[string]any) *LoggerMessage {
 	if fields == nil {
 		return m
 	}
@@ -61,13 +61,13 @@ func (m *LoggerMessage) WithFields(fields map[string]interface{}) *LoggerMessage
 		return m
 	}
 
-	if data, ok := m.Data.(map[string]interface{}); ok {
+	if data, ok := m.Data.(map[string]any); ok {
 		for k, v := range fields {
 			data[k] = v
 		}
 	} else {
 		// 如果当前Data不是map，创建新map并保留原值
-		newData := map[string]interface{}{"_previous": m.Data}
+		newData := map[string]any{"_previous": m.Data}
 		for k, v := range fields {
 			newData[k] = v
 		}
@@ -296,49 +296,49 @@ func (l *Logger) Panic(message *LoggerMessage) {
 // 以下是简化API方法，支持直接使用格式化字符串
 
 // Infof 记录信息级别的格式化日志
-func (l *Logger) Infof(format string, args ...interface{}) {
+func (l *Logger) Infof(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Info(msg)
 }
 
 // Tracef 记录跟踪级别的格式化日志
-func (l *Logger) Tracef(format string, args ...interface{}) {
+func (l *Logger) Tracef(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Trace(msg)
 }
 
 // Debugf 记录调试级别的格式化日志
-func (l *Logger) Debugf(format string, args ...interface{}) {
+func (l *Logger) Debugf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Debug(msg)
 }
 
 // Warnf 记录警告级别的格式化日志
-func (l *Logger) Warnf(format string, args ...interface{}) {
+func (l *Logger) Warnf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Warn(msg)
 }
 
 // Errorf 记录错误级别的格式化日志
-func (l *Logger) Errorf(err error, msgFormat string, args ...interface{}) {
+func (l *Logger) Errorf(err error, msgFormat string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(msgFormat, args...)
 	l.Error(msg, err)
 }
 
 // Fatalf 记录致命级别的格式化日志
-func (l *Logger) Fatalf(format string, args ...interface{}) {
+func (l *Logger) Fatalf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Fatal(msg)
 }
 
 // Panicf 记录恐慌级别的格式化日志
-func (l *Logger) Panicf(format string, args ...interface{}) {
+func (l *Logger) Panicf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	l.Panic(msg)

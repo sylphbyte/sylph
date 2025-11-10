@@ -1,6 +1,8 @@
 package sylph
 
 import (
+	"sync"
+
 	cron "github.com/robfig/cron/v3"
 	"github.com/sylphbyte/pr"
 )
@@ -151,6 +153,7 @@ type CronServer struct {
 
 	taskConfigs []TaskConfig             // 任务配置列表
 	tasks       map[TaskName]TaskHandler // 任务名称到处理函数的映射
+	tasksMutex  sync.RWMutex             // 保护 tasks map 的并发访问
 	started     bool                     // 服务是否已启动
 }
 
@@ -165,6 +168,7 @@ func (c *CronServer) Name() string {
 
 // Register 注册任务处理函数
 // 将任务名称与对应的处理函数关联
+// 此方法是并发安全的，可以在多个 goroutine 中同时调用
 //
 // 参数:
 //   - name: 任务名称，必须实现TaskName接口
@@ -177,11 +181,14 @@ func (c *CronServer) Name() string {
 //	    return nil
 //	})
 func (c *CronServer) Register(name TaskName, task TaskHandler) {
+	c.tasksMutex.Lock()
+	defer c.tasksMutex.Unlock()
 	c.tasks[name] = task
 }
 
 // receiveTask 获取任务处理函数
 // 根据任务名称查找对应的处理函数
+// 此方法是并发安全的，可以在多个 goroutine 中同时调用
 //
 // 参数:
 //   - name: 任务名称
@@ -190,6 +197,8 @@ func (c *CronServer) Register(name TaskName, task TaskHandler) {
 //   - task: 任务处理函数
 //   - ok: 是否找到任务处理函数
 func (c *CronServer) receiveTask(name TaskName) (task TaskHandler, ok bool) {
+	c.tasksMutex.RLock()
+	defer c.tasksMutex.RUnlock()
 	task, ok = c.tasks[name]
 	return
 }
@@ -266,7 +275,7 @@ func (c *CronServer) bindSwitchedHandler() {
 
 		// 检查任务是否已注册
 		if _, ok := c.tasks[conf.Name]; !ok {
-			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", map[string]interface{}{
+			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", map[string]any{
 				"task": conf.Name.Name(),
 			})
 
@@ -302,7 +311,7 @@ func (c *CronServer) takeRunHandler(name TaskName) func() {
 
 		// 执行任务处理函数，记录错误
 		if err := handler(ctx); err != nil {
-			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, map[string]interface{}{
+			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, map[string]any{
 				"task": name.Name(),
 			})
 		}
@@ -373,8 +382,8 @@ func newCronLogger(ctx Context) cron.Logger {
 // 参数:
 //   - msg: 日志消息
 //   - values: 附加值，结构化记录
-func (c *cronLogger) Info(msg string, values ...interface{}) {
-	c.ctx.Info("server.cronLogger.Info", msg, map[string]interface{}{
+func (c *cronLogger) Info(msg string, values ...any) {
+	c.ctx.Info("server.cronLogger.Info", msg, map[string]any{
 		"data": values,
 	})
 }
@@ -386,8 +395,8 @@ func (c *cronLogger) Info(msg string, values ...interface{}) {
 //   - err: 错误对象
 //   - msg: 日志消息
 //   - values: 附加值，结构化记录
-func (c *cronLogger) Error(err error, msg string, values ...interface{}) {
-	c.ctx.Error("server.cronLogger.Error", msg, err, map[string]interface{}{
+func (c *cronLogger) Error(err error, msg string, values ...any) {
+	c.ctx.Error("server.cronLogger.Error", msg, err, map[string]any{
 		"data": values,
 	})
 }

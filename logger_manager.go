@@ -115,7 +115,7 @@ func (l *loggerManager) EnableAsync(bufferSize int) {
 	atomic.StoreInt32(&l.asyncEnabled, 1)
 
 	// 对已存在的logger进行异步包装
-	l.loggers.Range(func(key, value interface{}) bool {
+	l.loggers.Range(func(key, value any) bool {
 		if logger, ok := value.(ILogger); ok {
 			// 检查是否已经是异步logger
 			if _, isAsync := logger.(*AsyncLogger); !isAsync {
@@ -148,10 +148,10 @@ func (l *loggerManager) DisableAsync() {
 
 	// 使用并发处理关闭所有异步logger
 	var wg sync.WaitGroup
-	l.asyncLoggers.Range(func(key, value interface{}) bool {
+	l.asyncLoggers.Range(func(key, value any) bool {
 		if asyncLogger, ok := value.(*AsyncLogger); ok {
 			wg.Add(1)
-			go func(k interface{}, al *AsyncLogger) {
+			go func(k any, al *AsyncLogger) {
 				defer wg.Done()
 
 				// 关闭异步logger
@@ -179,7 +179,7 @@ func (l *loggerManager) Close() {
 	l.DisableAsync()
 
 	// 清理其他资源
-	l.loggers.Range(func(key, value interface{}) bool {
+	l.loggers.Range(func(key, value any) bool {
 		if closer, ok := value.(interface{ Close() }); ok {
 			closer.Close()
 		}

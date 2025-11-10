@@ -11,7 +11,7 @@ func TestNewHeader(t *testing.T) {
 	header := NewHeader(endpoint)
 
 	assert.NotNil(t, header)
-	assert.Equal(t, endpoint, header.Endpoint)
+	assert.Equal(t, endpoint, header.Endpoint())
 	assert.NotEmpty(t, header.TraceId())
 }
 

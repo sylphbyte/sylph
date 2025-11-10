@@ -14,7 +14,7 @@ var _ logrus.Hook = (*LoggerBufferHook)(nil)
 
 // batchPool 用于重用batch切片，减少GC压力
 var batchPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make([]*logrus.Entry, 0, 128) // 预分配合理大小
 	},
 }
@@ -128,7 +128,7 @@ func (h *LoggerBufferHook) watchLogs() {
 // getLevelMap 获取级别Map
 func (h *LoggerBufferHook) getLevelMap() map[logrus.Level][]*logrus.Entry {
 	if h.levelMapPool.New == nil {
-		h.levelMapPool.New = func() interface{} {
+		h.levelMapPool.New = func() any {
 			return make(map[logrus.Level][]*logrus.Entry)
 		}
 	}

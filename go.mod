@@ -1,6 +1,6 @@
 module github.com/sylphbyte/sylph
 
-go 1.24.0
+go 1.25.4
 
 require (
 	github.com/apache/rocketmq-clients/golang/v5 v5.1.1-rc1

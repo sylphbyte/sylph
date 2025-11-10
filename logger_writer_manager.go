@@ -149,7 +149,7 @@ func (m *logWriterManager) Close() {
 	// 并发关闭所有writer
 	var wg sync.WaitGroup
 
-	m.writers.Range(func(key, value interface{}) bool {
+	m.writers.Range(func(key, value any) bool {
 		if writer, ok := value.(*rotatelogs.RotateLogs); ok {
 			wg.Add(1)
 			go func(w *rotatelogs.RotateLogs) {

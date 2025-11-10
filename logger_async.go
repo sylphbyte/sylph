@@ -32,7 +32,7 @@ type AsyncLogger struct {
 
 // logEntryPool 用于重用日志条目，减少内存分配
 var logEntryPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &logEntry{}
 	},
 }
@@ -264,43 +264,43 @@ func (a *AsyncLogger) Error(message *LoggerMessage, err error) {
 }
 
 // 实现简化API方法
-func (a *AsyncLogger) Infof(format string, args ...interface{}) {
+func (a *AsyncLogger) Infof(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Info(msg)
 }
 
-func (a *AsyncLogger) Tracef(format string, args ...interface{}) {
+func (a *AsyncLogger) Tracef(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Trace(msg)
 }
 
-func (a *AsyncLogger) Debugf(format string, args ...interface{}) {
+func (a *AsyncLogger) Debugf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Debug(msg)
 }
 
-func (a *AsyncLogger) Warnf(format string, args ...interface{}) {
+func (a *AsyncLogger) Warnf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Warn(msg)
 }
 
-func (a *AsyncLogger) Errorf(err error, format string, args ...interface{}) {
+func (a *AsyncLogger) Errorf(err error, format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Error(msg, err)
 }
 
-func (a *AsyncLogger) Fatalf(format string, args ...interface{}) {
+func (a *AsyncLogger) Fatalf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Fatal(msg)
 }
 
-func (a *AsyncLogger) Panicf(format string, args ...interface{}) {
+func (a *AsyncLogger) Panicf(format string, args ...any) {
 	msg := NewLoggerMessage()
 	msg.Message = fmt.Sprintf(format, args...)
 	a.Panic(msg)

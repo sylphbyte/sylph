@@ -67,7 +67,7 @@ func sendTestMessage(producer IProducer) {
 		defer wg.Done()
 
 		// 创建一个测试消息
-		message := NewSendMessage(map[string]interface{}{
+		message := NewSendMessage(map[string]any{
 			"id":      "test-001",
 			"content": "这是一条测试消息",
 			"time":    time.Now().Format(time.RFC3339),

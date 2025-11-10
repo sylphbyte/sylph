@@ -154,25 +154,6 @@ func init() {
 	servId = os.Getenv("LOG_SERV_ID")
 }
 
-// Roboter 简单机器人接口
-// 提供基本的消息发送能力，用于系统通知和报警
-//
-// 使用示例:
-//
-//	robot := GetRobot()
-//	if err := robot.Send("系统警报：CPU使用率超过90%"); err != nil {
-//	    log.Printf("发送警报失败: %v", err)
-//	}
-type Roboter interface {
-	// Send 发送纯文本消息
-	// 参数:
-	//   - text: 要发送的文本消息内容
-	//
-	// 返回:
-	//   - error: 发送错误，如果为nil表示发送成功
-	Send(text string) error
-}
-
 // IStringer 字符串化接口
 // 定义对象可以被转换为字符串表示，用于日志记录和调试
 //
@@ -217,7 +198,7 @@ type KeyMaker interface {
 //	registry := sylph.NewObjectRegistry()
 //
 //	// 注册服务
-//	registry.Register(keyMaker, "userService", func() interface{} {
+//	registry.Register(keyMaker, "userService", func() any {
 //	    return NewUserService()
 //	})
 //
@@ -232,7 +213,7 @@ type IObjectRegistry interface {
 	//   - name: 键名生成器
 	//   - key: 基础键名
 	//   - handler: 对象创建函数
-	Register(name KeyMaker, key string, handler func() interface{})
+	Register(name KeyMaker, key string, handler func() any)
 
 	// Receive 获取已注册的对象
 	// 参数:
@@ -241,9 +222,9 @@ type IObjectRegistry interface {
 	//   - share: 是否共享同一实例
 	//
 	// 返回:
-	//   - interface{}: 目标对象
+	//   - any: 目标对象
 	//   - bool: 是否成功获取
-	Receive(name KeyMaker, key string, share bool) (interface{}, bool)
+	Receive(name KeyMaker, key string, share bool) (any, bool)
 
 	// MustReceive 获取已注册的对象，如果不存在则抛出异常
 	// 参数:
@@ -252,11 +233,11 @@ type IObjectRegistry interface {
 	//   - share: 是否共享同一实例
 	//
 	// 返回:
-	//   - interface{}: 目标对象
+	//   - any: 目标对象
 	//
 	// 注意事项:
 	//   - 如果对象不存在，此方法会导致程序崩溃，谨慎使用
-	MustReceive(name KeyMaker, key string, share bool) interface{}
+	MustReceive(name KeyMaker, key string, share bool) any
 }
 
 // takeStack 获取当前调用栈信息
@@ -372,8 +353,8 @@ const (
 //
 //	type EmailReminderTask struct{}
 //
-//	func (t *EmailReminderTask) Handle(ctx sylph.Context, args interface{}) error {
-//	    params := args.(map[string]interface{})
+//	func (t *EmailReminderTask) Handle(ctx sylph.Context, args any) error {
+//	    params := args.(map[string]any)
 //	    return sendReminderEmail(params["email"].(string), params["message"].(string))
 //	}
 //
@@ -387,7 +368,7 @@ type CronTask interface {
 	//
 	// 返回:
 	//   - error: 任务执行的错误，如果为nil表示任务执行成功
-	Handle(ctx Context, args interface{}) error
+	Handle(ctx Context, args any) error
 }
 
 // IHeader 请求头接口
@@ -506,64 +487,11 @@ type IMessage interface {
 	// SetData 设置消息数据
 	// 参数:
 	//   - data: 消息的实际数据内容
-	SetData(data interface{})
+	SetData(data any)
 
 	// GetData 获取消息数据
 	// 返回消息的实际数据内容
-	GetData() interface{}
-}
-
-// IRobotMessage 机器人消息接口
-// 定义了机器人消息的基本操作，用于创建结构化的通知
-//
-// 使用示例:
-//
-//	robotMsg := sylph.NewRobotMessage()
-//	msgContent, err := robotMsg.Create(
-//	    "系统警告",
-//	    "数据库连接失败",
-//	    map[string]interface{}{"severity": "high", "time": time.Now().String()}
-//	)
-//	if err == nil {
-//	    robot.SendRaw(msgContent)
-//	}
-type IRobotMessage interface {
-	// Create 创建消息内容
-	// 参数:
-	//   - title: 消息标题
-	//   - content: 消息内容
-	//   - fields: 附加字段信息
-	//
-	// 返回:
-	//   - []byte: 序列化后的消息内容
-	//   - error: 操作错误，如果为nil表示操作成功
-	Create(title, content string, fields ...map[string]interface{}) ([]byte, error)
-}
-
-// IRobot 机器人接口
-// 定义了机器人的发送消息能力，用于系统通知和报警
-//
-// 使用示例:
-//
-//	robot := sylph.GetRobot("slack")
-//	err := robot.Send(
-//	    "服务重启通知",
-//	    "Web服务已成功重启",
-//	    map[string]interface{}{"time": time.Now().Format(time.RFC3339)}
-//	)
-//	if err != nil {
-//	    log.Printf("通知发送失败: %v", err)
-//	}
-type IRobot interface {
-	// Send 发送消息
-	// 参数:
-	//   - title: 消息标题
-	//   - content: 消息内容
-	//   - fields: 可选的附加字段
-	//
-	// 返回:
-	//   - error: 发送错误，如果为nil表示发送成功
-	Send(title, content string, fields ...map[string]interface{}) error
+	GetData() any
 }
 
 // ILogger 日志记录器接口
@@ -588,13 +516,13 @@ type ILogger interface {
 	Panic(message *LoggerMessage)
 
 	// 简化API - 格式化字符串
-	Infof(format string, args ...interface{})
-	Tracef(format string, args ...interface{})
-	Debugf(format string, args ...interface{})
-	Warnf(format string, args ...interface{})
-	Errorf(err error, format string, args ...interface{})
-	Fatalf(format string, args ...interface{})
-	Panicf(format string, args ...interface{})
+	Infof(format string, args ...any)
+	Tracef(format string, args ...any)
+	Debugf(format string, args ...any)
+	Warnf(format string, args ...any)
+	Errorf(err error, format string, args ...any)
+	Fatalf(format string, args ...any)
+	Panicf(format string, args ...any)
 
 	// 资源管理
 	Close() error
@@ -620,18 +548,6 @@ type ILogger interface {
 //	    // 可能会panic的代码
 //	}()
 type RecoverFunc func()
-
-// EventHandler 定义事件处理器函数类型
-// 用于注册事件的处理逻辑，实现事件驱动架构
-//
-// 使用示例:
-//
-//	eventBus.Subscribe("user.created", func(ctx sylph.Context, payload interface{}) {
-//	    user := payload.(User)
-//	    ctx.Logger().Info(sylph.NewLoggerMessage("新用户创建").WithField("user_id", user.ID))
-//	    // 处理用户创建事件
-//	})
-type EventHandler func(ctx Context, payload interface{})
 
 // Handler 定义通用处理器函数类型
 // 用于处理HTTP请求或其他类型的请求
