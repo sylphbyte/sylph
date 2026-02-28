@@ -8,7 +8,6 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
-	"github.com/sylphbyte/pr"
 	"gorm.io/gorm"
 )
 
@@ -474,7 +473,7 @@ func (a *ESStorageAdapter) CreateIndex(ctx Context, index string, mapping string
 	}
 
 	if exists {
-		pr.Warning("索引 %s 已存在，跳过创建", index)
+		printWarning("索引 %s 已存在，跳过创建", index)
 		return nil
 	}
 
@@ -491,6 +490,6 @@ func (a *ESStorageAdapter) CreateIndex(ctx Context, index string, mapping string
 		return errors.Errorf("创建索引 %s 失败: %s", index, resp.String())
 	}
 
-	pr.System("成功创建索引: %s", index)
+	printSystem("成功创建索引: %s", index)
 	return nil
 }

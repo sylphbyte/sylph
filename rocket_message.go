@@ -4,7 +4,6 @@ import (
 	"time"
 
 	mq "github.com/apache/rocketmq-clients/golang/v5"
-	"github.com/sylphbyte/pr"
 )
 
 // TransactionHandle 事务消息处理函数类型
@@ -232,5 +231,5 @@ func (s *SendRet) TakeReceipts() []*mq.SendReceipt {
 // PrintTakeReceipts 打印发送回执
 // 以JSON格式打印发送回执信息，用于调试
 func (s *SendRet) PrintTakeReceipts() {
-	pr.Json(s.raw)
+	printJson(s.raw)
 }

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/sylphbyte/pr"
-
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -99,7 +97,7 @@ func (g *GinServer) RegisterRoute(route func(route *gin.Engine)) {
 //   - 此方法为非阻塞式，会在后台goroutine中启动服务器
 //   - 服务器实际启动失败不会立即返回错误，而是记录到日志
 func (g *GinServer) Boot() error {
-	pr.System("Starting Gin server on port %d...\n", g.opt.Port)
+	printSystem("Starting Gin server on port %d...\n", g.opt.Port)
 
 	// 创建 http.Server
 	g.httpServer = &http.Server{
@@ -110,7 +108,7 @@ func (g *GinServer) Boot() error {
 	// 异步启动
 	go func() {
 		if err := g.httpServer.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
-			pr.Error("Gin server error: %v\n", err)
+			printError("Gin server error: %v\n", err)
 		}
 	}()
 
@@ -128,7 +126,7 @@ func (g *GinServer) Boot() error {
 //   - 如果服务器未启动(httpServer为nil)，则直接返回nil
 //   - 此方法会阻塞等待所有请求处理完成或超时
 func (g *GinServer) Shutdown() error {
-	pr.System("Shutting down Gin server on port %d...\n", g.opt.Port)
+	printSystem("Shutting down Gin server on port %d...\n", g.opt.Port)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

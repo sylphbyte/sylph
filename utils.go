@@ -7,41 +7,13 @@ import (
 	"time"
 )
 
-// init 全局初始化函数，优化系统性能
-// 在包导入时自动执行，设置适当的系统参数以获得更好的性能
-//
-// 功能说明:
-//   - 调整GOMAXPROCS以充分利用CPU资源
-//   - 优化GC参数，减少GC频率，平衡内存使用和性能
-//   - 设置GC并行度，减少GC暂停时间
-//
-// 逻辑说明:
-//   - 将GOMAXPROCS设置为CPU核心数，避免上下文切换开销
-//   - 增加GC百分比，降低GC触发频率，减轻GC压力
-//   - 限制GC最大线程数，保证应用程序有足够资源
-func init() {
-	// 设置适当的GOMAXPROCS以避免超订阅
-	// 将Go运行时使用的CPU数量设置为机器的逻辑CPU数量
-	//cpus := runtime.NumCPU()
-	//runtime.GOMAXPROCS(cpus)
-	//
-	//// 调整GC参数，在高并发场景下平衡GC压力和内存使用
-	//// 默认为100，增加这个值会减少GC频率但增加内存使用
-	//// 200表示当内存使用量达到上次GC后内存使用量的300%时触发GC
-	//debug.SetGCPercent(200)
-	//
-	//// 为了减少GC暂停时间，可以设置较小的并行度
-	//// 控制GC使用的最大线程数，这里设置为CPU数量的两倍
-	//debug.SetMaxThreads(cpus * 2)
-}
-
 // 为常用的小对象添加对象池以减少GC压力
 var (
-	// mapPool 是map[string]interface{}对象的池
+	// mapPool 是map[string]any对象的池
 	// 用于减少频繁创建和销毁map导致的GC压力
 	mapPool = sync.Pool{
-		New: func() interface{} {
-			return make(map[string]interface{}, 8)
+		New: func() any {
+			return make(map[string]any, 8)
 		},
 	}
 
@@ -49,7 +21,7 @@ var (
 	// 从对象池中获取一个map，避免频繁创建新map
 	//
 	// 返回:
-	//   - map[string]interface{}: 一个可复用的map对象
+	//   - map[string]any: 一个可复用的map对象
 	//
 	// 使用示例:
 	//
@@ -57,8 +29,8 @@ var (
 	//	m["key"] = value
 	//	// 使用完毕后归还
 	//	sylph.ReleaseMap(m)
-	GetMap = func() map[string]interface{} {
-		return mapPool.Get().(map[string]interface{})
+	GetMap = func() map[string]any {
+		return mapPool.Get().(map[string]any)
 	}
 
 	// ReleaseMap 归还map到对象池
@@ -70,7 +42,7 @@ var (
 	// 注意事项:
 	//   - 在归还前会清空map中的所有键值对
 	//   - 归还后不应再使用该map对象
-	ReleaseMap = func(m map[string]interface{}) {
+	ReleaseMap = func(m map[string]any) {
 		for k := range m {
 			delete(m, k)
 		}
@@ -243,7 +215,7 @@ func CleanPath(path string) string {
 //
 // 使用示例:
 //
-//	defer sylph.RecoverWithFunc(func(r interface{}) {
+//	defer sylph.RecoverWithFunc(func(r any) {
 //	    log.Printf("Recovered from panic: %v", r)
 //	    // 也可以在这里发送告警或记录详细日志
 //	})
@@ -255,7 +227,7 @@ func CleanPath(path string) string {
 //   - 如果没有发生panic，onPanic函数不会被调用
 //   - 如果onPanic为nil，只会捕获panic但不执行任何处理
 //   - 使用此函数可以防止panic传播导致程序崩溃
-func RecoverWithFunc(onPanic func(r interface{})) {
+func RecoverWithFunc(onPanic func(r any)) {
 	if r := recover(); r != nil {
 		if onPanic != nil {
 			onPanic(r)
@@ -290,7 +262,7 @@ func RecoverWithFunc(onPanic func(r interface{})) {
 func RecoverGoroutine(ctx Context, location string) {
 	if r := recover(); r != nil {
 		stack := takeStack()
-		ctx.Error(location, "goroutine panic", nil, map[string]interface{}{
+		ctx.Error(location, "goroutine panic", nil, map[string]any{
 			"error": r,
 			"stack": stack,
 		})

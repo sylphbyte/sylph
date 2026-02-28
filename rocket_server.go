@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sylphbyte/pr"
-
 	mq "github.com/apache/rocketmq-clients/golang/v5"
 	"github.com/pkg/errors"
 )
@@ -343,7 +341,7 @@ func (r *RocketConsumerServer) Boot() (err error) {
 		}
 
 		if retryCount < 2 {
-			pr.Yellow("Failed to create RocketMQ consumer client, retrying... (%d/3)", retryCount+1)
+			printYellow("Failed to create RocketMQ consumer client, retrying... (%d/3)", retryCount+1)
 			time.Sleep(time.Duration(retryCount+1) * time.Second)
 		}
 	}
@@ -366,7 +364,7 @@ func (r *RocketConsumerServer) Boot() (err error) {
 	// 启动消费者线程
 	r.Listen()
 
-	pr.Green("RocketMQ consumer started successfully, group: %s, topics: %d, max goroutines: %d",
+	printGreen("RocketMQ consumer started successfully, group: %s, topics: %d, max goroutines: %d",
 		r.consumer.TakeGroup(), len(r.consumer.Subscriptions), r.consumer.TakeMaxGoroutines())
 	return nil
 }
@@ -385,7 +383,7 @@ func (r *RocketConsumerServer) Shutdown() error {
 		return nil
 	}
 
-	pr.Yellow("Shutting down RocketMQ consumer, group: %s", r.consumer.TakeGroup())
+	printYellow("Shutting down RocketMQ consumer, group: %s", r.consumer.TakeGroup())
 
 	// 标记停止状态
 	r.started = false
@@ -407,12 +405,12 @@ func (r *RocketConsumerServer) Shutdown() error {
 
 	select {
 	case <-done:
-		pr.Green("All workers shut down gracefully")
+		printGreen("All workers shut down gracefully")
 	case <-time.After(r.consumer.TakeShutdownTimeout()):
-		pr.Yellow("Shutdown timeout (%v), some workers may still be running", r.consumer.TakeShutdownTimeout())
+		printYellow("Shutdown timeout (%v), some workers may still be running", r.consumer.TakeShutdownTimeout())
 	}
 
-	pr.Green("RocketMQ consumer shutdown complete, group: %s", r.consumer.TakeGroup())
+	printGreen("RocketMQ consumer shutdown complete, group: %s", r.consumer.TakeGroup())
 	return nil
 }
 
@@ -442,22 +440,22 @@ func (r *RocketConsumerServer) receiveWithRestart(workerID int) {
 		// 检查服务器状态和上下文
 		select {
 		case <-r.ctx.Done():
-			pr.Info("Worker %d exiting, context cancelled", workerID)
+			printInfo("Worker %d exiting, context cancelled", workerID)
 			return
 		case <-r.shutdown:
-			pr.Info("Worker %d exiting, server is shutting down", workerID)
+			printInfo("Worker %d exiting, server is shutting down", workerID)
 			return
 		default:
 		}
 
 		if !r.started {
-			pr.Info("Worker %d exiting, server stopped", workerID)
+			printInfo("Worker %d exiting, server stopped", workerID)
 			return
 		}
 
 		// 检查重试次数
 		if retryCount >= maxRetries {
-			pr.Error("Worker %d exceeded max retries (%d), exiting", workerID, maxRetries)
+			printError("Worker %d exceeded max retries (%d), exiting", workerID, maxRetries)
 			return
 		}
 
@@ -468,7 +466,7 @@ func (r *RocketConsumerServer) receiveWithRestart(workerID int) {
 		retryCount++
 		waitTime := time.Duration(retryCount) * 5 * time.Second // 递增等待时间
 
-		pr.Yellow("Worker %d crashed, retry %d/%d after %v", workerID, retryCount, maxRetries, waitTime)
+		printYellow("Worker %d crashed, retry %d/%d after %v", workerID, retryCount, maxRetries, waitTime)
 
 		// 可中断的等待
 		select {
@@ -498,7 +496,7 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		if rec := recover(); rec != nil {
 			stack := make([]byte, 4096)
 			stack = stack[:runtime.Stack(stack, false)]
-			pr.Error("Consumer crashed and will exit: %v\n%s", rec, stack)
+			printError("Consumer crashed and will exit: %v\n%s", rec, stack)
 		}
 	}()
 
@@ -506,16 +504,16 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		// 检查服务器状态和上下文
 		select {
 		case <-r.ctx.Done():
-			pr.Info("Consumer receive loop exiting, context cancelled")
+			printInfo("Consumer receive loop exiting, context cancelled")
 			return
 		case <-r.shutdown:
-			pr.Info("Consumer receive loop exiting, server is shutting down")
+			printInfo("Consumer receive loop exiting, server is shutting down")
 			return
 		default:
 		}
 
 		if !r.started {
-			pr.Info("Consumer receive loop exiting, server stopped")
+			printInfo("Consumer receive loop exiting, server stopped")
 			return
 		}
 
@@ -525,7 +523,7 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 		if err != nil {
 			// 检查是否是因为上下文取消导致的错误
 			if r.ctx.Err() != nil {
-				pr.Info("Receive cancelled due to context cancellation")
+				printInfo("Receive cancelled due to context cancellation")
 				return
 			}
 			r.handleReceiveError(err)
@@ -560,7 +558,7 @@ func (r *RocketConsumerServer) Receive(consumer mq.SimpleConsumer) {
 			default:
 				// 无法获取许可，说明已达到最大并发数
 				// 记录警告并跳过此消息（实际应用中可能需要重新投递或其他策略）
-				pr.Yellow("Max goroutines reached (%d), skipping message from topic: %s",
+				printYellow("Max goroutines reached (%d), skipping message from topic: %s",
 					r.consumer.TakeMaxGoroutines(), view.GetTopic())
 			}
 		}
@@ -587,7 +585,7 @@ func (r *RocketConsumerServer) handleReceiveError(err error) {
 		waitTime = 10 * time.Second
 	}
 
-	pr.Error("Failed to receive messages: %v, will retry in %v", err, waitTime)
+	printError("Failed to receive messages: %v, will retry in %v", err, waitTime)
 	time.Sleep(waitTime)
 }
 
@@ -602,7 +600,7 @@ func (r *RocketConsumerServer) handleMessage(ctx context.Context, consumer mq.Si
 	// panic恢复机制
 	defer func() {
 		if rec := recover(); rec != nil {
-			pr.Error("Panic handling message: %v, topic: %s, msgId: %s",
+			printError("Panic handling message: %v, topic: %s, msgId: %s",
 				rec, view.GetTopic(), view.GetMessageId())
 			// panic时自动ack，避免消息无限重试
 			_ = consumer.Ack(ctx, view)
@@ -612,7 +610,7 @@ func (r *RocketConsumerServer) handleMessage(ctx context.Context, consumer mq.Si
 	// 检查上下文是否已取消
 	select {
 	case <-ctx.Done():
-		pr.Info("Message handler cancelled, topic: %s, msgId: %s", view.GetTopic(), view.GetMessageId())
+		printInfo("Message handler cancelled, topic: %s, msgId: %s", view.GetTopic(), view.GetMessageId())
 		return
 	default:
 	}
@@ -628,7 +626,7 @@ func (r *RocketConsumerServer) handleMessage(ctx context.Context, consumer mq.Si
 	// 查找处理器
 	handler, ok := r.routes[topicName.Name()]
 	if !ok || handler == nil {
-		pr.Yellow("Consumer no handler for topic: %s, group: %s, msgId: %s",
+		printYellow("Consumer no handler for topic: %s, group: %s, msgId: %s",
 			view.GetTopic(), r.consumer.TakeGroup(), view.GetMessageId())
 		// 没有处理器，不ack消息，让其重新投递或被其他消费者处理
 		return
@@ -658,9 +656,9 @@ func (r *RocketConsumerServer) handleMessage(ctx context.Context, consumer mq.Si
 		// 处理完成
 	case <-ctx.Done():
 		// 上下文取消
-		pr.Info("Message handler context cancelled, topic: %s, msgId: %s", view.GetTopic(), view.GetMessageId())
+		printInfo("Message handler context cancelled, topic: %s, msgId: %s", view.GetTopic(), view.GetMessageId())
 	case <-time.After(handlerTimeout):
 		// 处理超时，记录警告但不强制ack，让handler自行决定
-		pr.Yellow("Message handler timeout (%v), topic: %s, msgId: %s", handlerTimeout, view.GetTopic(), view.GetMessageId())
+		printYellow("Message handler timeout (%v), topic: %s, msgId: %s", handlerTimeout, view.GetTopic(), view.GetMessageId())
 	}
 }

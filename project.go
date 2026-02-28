@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/sylphbyte/pr"
 )
 
 // State 服务状态枚举
@@ -377,7 +375,7 @@ func (p *Project) bootServers(ctx context.Context, servers []IServer) []error {
 //   - 如果启动超过设定的超时时间，会返回超时错误
 func (p *Project) bootServer(ctx context.Context, srv IServer) error {
 	serverName := p.getServerName(srv)
-	pr.System("Starting service %s...\n", serverName)
+	printSystem("Starting service %s...\n", serverName)
 
 	// 创建带超时的上下文
 	bootCtx, cancel := context.WithTimeout(ctx, p.bootTimeout)
@@ -389,7 +387,7 @@ func (p *Project) bootServer(ctx context.Context, srv IServer) error {
 		defer func() {
 			if r := recover(); r != nil {
 				errStr := fmt.Sprintf("panic in service %s boot: %v", serverName, r)
-				pr.Error("%s\n", errStr)
+				printError("%s\n", errStr)
 				errCh <- errors.New(errStr)
 			}
 		}()
@@ -403,18 +401,18 @@ func (p *Project) bootServer(ctx context.Context, srv IServer) error {
 	case err := <-errCh:
 		if err != nil {
 			p.setServerState(srv, StateStopped)
-			pr.Error("Failed to start service %s: %v\n", serverName, err)
+			printError("Failed to start service %s: %v\n", serverName, err)
 			return err
 		}
 
 		p.setServerState(srv, StateRunning)
-		pr.System("Service %s started successfully\n", serverName)
+		printSystem("Service %s started successfully\n", serverName)
 		return nil
 
 	case <-bootCtx.Done():
 		p.setServerState(srv, StateStopped)
 		err := fmt.Errorf("service %s boot timeout after %v", serverName, p.bootTimeout)
-		pr.Error("%v\n", err)
+		printError("%v\n", err)
 		return err
 	}
 }
@@ -479,7 +477,7 @@ func (p *Project) rollbackServers(started []IServer) {
 		return
 	}
 
-	pr.System("Rolling back %d started services...\n", len(started))
+	printSystem("Rolling back %d started services...\n", len(started))
 
 	// 并行关闭以加速回滚
 	var wg sync.WaitGroup
@@ -491,13 +489,13 @@ func (p *Project) rollbackServers(started []IServer) {
 				defer wg.Done()
 
 				serverName := p.getServerName(s)
-				pr.System("Rolling back service %s...\n", serverName)
+				printSystem("Rolling back service %s...\n", serverName)
 				p.setServerState(s, StateStopping)
 
 				// 安全关闭，忽略错误
 				shutdownErr := s.Shutdown()
 				if shutdownErr != nil {
-					pr.Warning("Ignoring error during rollback of %s: %v\n", serverName, shutdownErr)
+					printWarning("Ignoring error during rollback of %s: %v\n", serverName, shutdownErr)
 				}
 
 				p.setServerState(s, StateStopped)
@@ -506,7 +504,7 @@ func (p *Project) rollbackServers(started []IServer) {
 	}
 
 	wg.Wait()
-	pr.System("Rollback completed\n")
+	printSystem("Rollback completed\n")
 }
 
 // prepareToStop 准备停止的服务
@@ -602,23 +600,23 @@ func (p *Project) WaitForShutdown() {
 
 	// 等待关闭信号
 	sig := <-sigChan
-	pr.System("Received signal: %v, shutting down...\n", sig)
+	printSystem("Received signal: %v, shutting down...\n", sig)
 
 	// 打印当前服务状态
 	states := p.GetServerStates()
-	pr.System("Current service states before shutdown:\n")
+	printSystem("Current service states before shutdown:\n")
 	for name, state := range states {
-		pr.System("  %s: %s\n", name, state)
+		printSystem("  %s: %s\n", name, state)
 	}
 
 	// 执行关闭
 	startTime := time.Now()
 	if err := p.Shutdowns(); err != nil {
-		pr.Red("Shutdown failed after %v: %v\n", time.Since(startTime), err)
+		printRed("Shutdown failed after %v: %v\n", time.Since(startTime), err)
 		os.Exit(1)
 	}
 
-	pr.System("All services shutdown gracefully in %v\n", time.Since(startTime))
+	printSystem("All services shutdown gracefully in %v\n", time.Since(startTime))
 	os.Exit(0)
 }
 
@@ -651,7 +649,7 @@ func (p *Project) parallelBoot(ctx context.Context, servers []IServer) []error {
 			defer wg.Done()
 
 			name := p.getServerName(srv)
-			pr.System("Starting service %s...\n", name)
+			printSystem("Starting service %s...\n", name)
 			p.setServerState(srv, StateStarting)
 
 			// 启动服务
@@ -668,7 +666,7 @@ func (p *Project) parallelBoot(ctx context.Context, servers []IServer) []error {
 			started = append(started, srv)
 			mu.Unlock()
 
-			pr.System("Service %s started\n", name)
+			printSystem("Service %s started\n", name)
 		}(server)
 	}
 
@@ -724,7 +722,7 @@ func (p *Project) parallelShutdown(ctx context.Context, servers []IServer) []err
 			defer wg.Done()
 
 			name := p.getServerName(srv)
-			pr.System("Stopping service %s...\n", name)
+			printSystem("Stopping service %s...\n", name)
 
 			// 关闭服务
 			err := srv.Shutdown()
@@ -732,7 +730,7 @@ func (p *Project) parallelShutdown(ctx context.Context, servers []IServer) []err
 				errChan <- fmt.Errorf("failed to shutdown %s: %v", name, err)
 			} else {
 				p.setServerState(srv, StateStopped)
-				pr.System("Service %s stopped\n", name)
+				printSystem("Service %s stopped\n", name)
 			}
 		}(server)
 	}
@@ -775,7 +773,7 @@ func (p *Project) orderedBoot(ctx context.Context, servers []IServer) []error {
 
 	for _, srv := range servers {
 		name := p.getServerName(srv)
-		pr.System("Starting service %s...\n", name)
+		printSystem("Starting service %s...\n", name)
 		p.setServerState(srv, StateStarting)
 
 		err := srv.Boot()
@@ -787,7 +785,7 @@ func (p *Project) orderedBoot(ctx context.Context, servers []IServer) []error {
 
 		p.setServerState(srv, StateRunning)
 		started = append(started, srv)
-		pr.System("Service %s started\n", name)
+		printSystem("Service %s started\n", name)
 	}
 
 	// 如果有错误，回滚已启动的服务
@@ -816,7 +814,7 @@ func (p *Project) orderedShutdown(ctx context.Context, servers []IServer) []erro
 
 	for _, srv := range servers {
 		name := p.getServerName(srv)
-		pr.System("Stopping service %s...\n", name)
+		printSystem("Stopping service %s...\n", name)
 
 		// 使用带超时的上下文
 		shutdownCtx, cancel := context.WithTimeout(ctx, p.shutdownTimeout/time.Duration(len(servers)))
@@ -849,7 +847,7 @@ func (p *Project) orderedShutdown(ctx context.Context, servers []IServer) []erro
 			// 继续关闭其他服务
 		} else {
 			p.setServerState(srv, StateStopped)
-			pr.System("Service %s stopped\n", name)
+			printSystem("Service %s stopped\n", name)
 		}
 	}
 

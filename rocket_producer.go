@@ -2,6 +2,7 @@ package sylph
 
 import (
 	"context"
+
 	"github.com/pkg/errors"
 )
 
@@ -48,7 +49,6 @@ type NormalProducer struct {
 
 func (n *NormalProducer) Send(ctx Context, message *SendMessage) *SendRet {
 	msg := message.TakeMqMessage(n.topic.Topic)
-
 	return NewSendRet(n.client.Send(context.Background(), msg))
 }
 

@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/sylphbyte/pr"
 )
 
 var (
@@ -191,7 +190,7 @@ func (sm *serverManager) Register(server IServer) error {
 
 	// 注册服务器
 	sm.servers[name] = server
-	pr.System("Server registered: %s\n", name)
+	printSystem("Server registered: %s\n", name)
 
 	return nil
 }
@@ -355,11 +354,11 @@ func (sm *serverManager) BootAll() error {
 	defer sm.mutex.RUnlock()
 
 	for name, server := range sm.servers {
-		pr.System("Starting server: %s\n", name)
+		printSystem("Starting server: %s\n", name)
 		if err := server.Boot(); err != nil {
 			return errors.Wrapf(err, "failed to boot server %s", name)
 		}
-		pr.Green("Server started: %s\n", name)
+		printGreen("Server started: %s\n", name)
 	}
 
 	return nil
@@ -381,12 +380,12 @@ func (sm *serverManager) ShutdownAll() error {
 
 	var lastErr error
 	for name, server := range sm.servers {
-		pr.System("Shutting down server: %s\n", name)
+		printSystem("Shutting down server: %s\n", name)
 		if err := server.Shutdown(); err != nil {
 			lastErr = errors.Wrapf(err, "failed to shutdown server %s", name)
-			pr.Error("Failed to shutdown server %s: %v\n", name, err)
+			printError("Failed to shutdown server %s: %v\n", name, err)
 		} else {
-			pr.Green("Server shutdown: %s\n", name)
+			printGreen("Server shutdown: %s\n", name)
 		}
 	}
 

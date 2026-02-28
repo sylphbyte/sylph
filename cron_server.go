@@ -1,8 +1,9 @@
 package sylph
 
 import (
+	"sync"
+
 	cron "github.com/robfig/cron/v3"
-	"github.com/sylphbyte/pr"
 )
 
 const (
@@ -80,7 +81,7 @@ func (c CrontabModeName) String() string {
 func (c CrontabModeName) Mode() CrontabMode {
 	mode, ok := crontabNameModeMapping[c]
 	if !ok {
-		pr.Panic("not has mode name: %s", c)
+		printPanic("not has mode name: %s", c)
 	}
 
 	return mode
@@ -151,6 +152,7 @@ type CronServer struct {
 
 	taskConfigs []TaskConfig             // 任务配置列表
 	tasks       map[TaskName]TaskHandler // 任务名称到处理函数的映射
+	tasksMutex  sync.RWMutex             // 保护 tasks map 的并发访问
 	started     bool                     // 服务是否已启动
 }
 
@@ -165,6 +167,7 @@ func (c *CronServer) Name() string {
 
 // Register 注册任务处理函数
 // 将任务名称与对应的处理函数关联
+// 此方法是并发安全的，可以在多个 goroutine 中同时调用
 //
 // 参数:
 //   - name: 任务名称，必须实现TaskName接口
@@ -177,11 +180,14 @@ func (c *CronServer) Name() string {
 //	    return nil
 //	})
 func (c *CronServer) Register(name TaskName, task TaskHandler) {
+	c.tasksMutex.Lock()
+	defer c.tasksMutex.Unlock()
 	c.tasks[name] = task
 }
 
 // receiveTask 获取任务处理函数
 // 根据任务名称查找对应的处理函数
+// 此方法是并发安全的，可以在多个 goroutine 中同时调用
 //
 // 参数:
 //   - name: 任务名称
@@ -190,6 +196,8 @@ func (c *CronServer) Register(name TaskName, task TaskHandler) {
 //   - task: 任务处理函数
 //   - ok: 是否找到任务处理函数
 func (c *CronServer) receiveTask(name TaskName) (task TaskHandler, ok bool) {
+	c.tasksMutex.RLock()
+	defer c.tasksMutex.RUnlock()
 	task, ok = c.tasks[name]
 	return
 }
@@ -219,11 +227,9 @@ func (c *CronServer) modeOptions() (opts []cron.Option) {
 	case CrontabSkipMode:
 		// 如果上一个任务还在执行，则跳过本次执行
 		wrapper = cron.SkipIfStillRunning(c.logger)
-		break
 	case CrontabDelayMode:
 		// 如果上一个任务还在执行，则等待执行完成后再执行下一个
 		wrapper = cron.DelayIfStillRunning(c.logger)
-		break
 	default:
 		// 默认模式不需要额外的包装器
 		return
@@ -266,17 +272,17 @@ func (c *CronServer) bindSwitchedHandler() {
 
 		// 检查任务是否已注册
 		if _, ok := c.tasks[conf.Name]; !ok {
-			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", map[string]interface{}{
+			c.ctx.Warn("server.CronServer.bindSwitchedHandler", "crontab task not setting", map[string]any{
 				"task": conf.Name.Name(),
 			})
 
-			pr.Warning("CronServer task %s not setting\n", conf.Name)
+			printWarning("CronServer task %s not setting\n", conf.Name)
 			continue
 		}
 
 		// 添加任务到cron调度器
 		if _, err := c.cron.AddFunc(conf.Spec, c.takeRunHandler(conf.Name)); err != nil {
-			pr.Panic("CronServer bindSwitchedHandler failed: %+v\n", err)
+			printPanic("CronServer bindSwitchedHandler failed: %+v\n", err)
 		}
 	}
 }
@@ -291,9 +297,15 @@ func (c *CronServer) bindSwitchedHandler() {
 //   - func(): 可以被cron库调用的无参数函数
 func (c *CronServer) takeRunHandler(name TaskName) func() {
 	return func() {
-		handler := c.tasks[name]
+		// 使用并发安全的 receiveTask 方法获取任务处理函数
+		handler, ok := c.receiveTask(name)
+		if !ok {
+			c.ctx.Warn("server.CronServer.takeRunHandler", "task not found", map[string]any{
+				"task": name.Name(),
+			})
+			return
+		}
 
-		pr.Red("run name: %s\n", name)
 		// 克隆上下文，避免污染原始上下文
 		ctx := c.ctx.Clone()
 
@@ -302,7 +314,7 @@ func (c *CronServer) takeRunHandler(name TaskName) func() {
 
 		// 执行任务处理函数，记录错误
 		if err := handler(ctx); err != nil {
-			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, map[string]interface{}{
+			ctx.Error("server.CronServer.takeRunHandler", "cron task run failed", err, map[string]any{
 				"task": name.Name(),
 			})
 		}
@@ -373,8 +385,8 @@ func newCronLogger(ctx Context) cron.Logger {
 // 参数:
 //   - msg: 日志消息
 //   - values: 附加值，结构化记录
-func (c *cronLogger) Info(msg string, values ...interface{}) {
-	c.ctx.Info("server.cronLogger.Info", msg, map[string]interface{}{
+func (c *cronLogger) Info(msg string, values ...any) {
+	c.ctx.Info("server.cronLogger.Info", msg, map[string]any{
 		"data": values,
 	})
 }
@@ -386,8 +398,8 @@ func (c *cronLogger) Info(msg string, values ...interface{}) {
 //   - err: 错误对象
 //   - msg: 日志消息
 //   - values: 附加值，结构化记录
-func (c *cronLogger) Error(err error, msg string, values ...interface{}) {
-	c.ctx.Error("server.cronLogger.Error", msg, err, map[string]interface{}{
+func (c *cronLogger) Error(err error, msg string, values ...any) {
+	c.ctx.Error("server.cronLogger.Error", msg, err, map[string]any{
 		"data": values,
 	})
 }

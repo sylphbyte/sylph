@@ -24,7 +24,7 @@ type LoggerFormatter struct {
 // 初始化对象池
 func (f *LoggerFormatter) getBuffer() *bytes.Buffer {
 	if f.bufferPool.New == nil {
-		f.bufferPool.New = func() interface{} {
+		f.bufferPool.New = func() any {
 			return bytes.NewBuffer(make([]byte, 0, 1024)) // 预分配合理大小的缓冲区
 		}
 	}
@@ -103,7 +103,7 @@ func (f *LoggerFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	// 添加其他字段到Extra
 	if len(entry.Data) > 1 { // 大于1是因为已经有_message字段
 		if message.Extra == nil {
-			message.Extra = make(map[string]interface{})
+			message.Extra = make(map[string]any)
 		}
 		f.extData(entry, message.Extra)
 	}

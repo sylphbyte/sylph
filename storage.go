@@ -12,7 +12,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
-	"github.com/sylphbyte/pr"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -21,41 +20,38 @@ import (
 
 // MysqlConfig MySQL配置结构体
 type MysqlConfig struct {
-	Debug       bool   `yaml:"debug"`
+	Debug       bool   `yaml:"debug" mapstructure:"debug"`
 	LogMode     int    `yaml:"log_mode" mapstructure:"log_mode"`
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
-	Database    string `yaml:"database"`
-	Charset     string `yaml:"charset"`
+	Host        string `yaml:"host" mapstructure:"host"`
+	Port        int    `yaml:"port" mapstructure:"port"`
+	Username    string `yaml:"username" mapstructure:"username"`
+	Password    string `yaml:"password" mapstructure:"password"`
+	Database    string `yaml:"database" mapstructure:"database"`
+	Charset     string `yaml:"charset" mapstructure:"charset"`
 	MaxIdleConn int    `yaml:"max_idle_conn" mapstructure:"max_idle_conn"`
 	MaxOpenConn int    `yaml:"max_open_conn" mapstructure:"max_open_conn"`
 	MaxLifeTime int    `yaml:"max_life_time" mapstructure:"max_life_time"`
-	//Proxy       ProxyConfig `yaml:"proxy"` // 代理配置
 }
 
 // RedisConfig Redis配置结构体
 type RedisConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Password string `yaml:"password"`
-	Database int    `yaml:"database"`
-	//Proxy    ProxyConfig `yaml:"proxy"` // 代理配置
+	Host     string `yaml:"host" mapstructure:"host"`
+	Port     int    `yaml:"port" mapstructure:"port"`
+	Password string `yaml:"password" mapstructure:"password"`
+	Database int    `yaml:"database" mapstructure:"database"`
 }
 
 // ESConfig Elasticsearch配置结构体
 type ESConfig struct {
-	Addresses    []string `yaml:"addresses"`                                  // ES服务器地址，如 ["http://localhost:9200"]
-	Username     string   `yaml:"username"`                                   // 用户名
-	Password     string   `yaml:"password"`                                   // 密码
+	Addresses    []string `yaml:"addresses" mapstructure:"addresses"`         // ES服务器地址，如 ["http://localhost:9200"]
+	Username     string   `yaml:"username" mapstructure:"username"`           // 用户名
+	Password     string   `yaml:"password" mapstructure:"password"`           // 密码
 	CloudID      string   `yaml:"cloud_id" mapstructure:"cloud_id"`           // 云ID，用于Elastic Cloud
 	APIKey       string   `yaml:"api_key" mapstructure:"api_key"`             // API密钥
 	EnableHTTPS  bool     `yaml:"enable_https" mapstructure:"enable_https"`   // 是否启用HTTPS
 	SkipVerify   bool     `yaml:"skip_verify" mapstructure:"skip_verify"`     // 是否跳过证书验证
 	MaxRetries   int      `yaml:"max_retries" mapstructure:"max_retries"`     // 最大重试次数
 	RetryTimeout int      `yaml:"retry_timeout" mapstructure:"retry_timeout"` // 重试超时时间(秒)
-	//Proxy        ProxyConfig `yaml:"proxy"`                                      // 代理配置
 }
 
 // StorageConfigs 存储配置结构体
@@ -63,28 +59,6 @@ type StorageConfigs struct {
 	MysqlGroup map[string]MysqlConfig `yaml:"mysql_group" mapstructure:"mysql_group"`
 	RedisGroup map[string]RedisConfig `yaml:"redis_group" mapstructure:"redis_group"`
 	ESGroup    map[string]ESConfig    `yaml:"es_group" mapstructure:"es_group"`
-}
-
-// Hash 计算MySQL配置的哈希值，用于标识相同配置
-func (c MysqlConfig) Hash() string {
-	return fmt.Sprintf("%s:%d:%s:%s:%s:%d:%d:%d:%s:%d",
-		c.Host, c.Port, c.Username, c.Password, c.Database,
-		c.MaxIdleConn, c.MaxOpenConn, c.MaxLifeTime, c.Charset, c.LogMode)
-	//c.Proxy.Type, c.Proxy.Port, c.Proxy.Username, c.Proxy.Host)
-}
-
-// Hash 计算Redis配置的哈希值，用于标识相同配置
-func (c RedisConfig) Hash() string {
-	return fmt.Sprintf("%s:%d:%s:%d",
-		c.Host, c.Port, c.Password, c.Database)
-}
-
-// Hash 计算ES配置的哈希值，用于标识相同配置
-func (c ESConfig) Hash() string {
-	addresses := strings.Join(c.Addresses, ",")
-	return fmt.Sprintf("%s:%s:%s:%s:%s:%t:%t:%d:%d",
-		addresses, c.Username, c.Password, c.CloudID, c.APIKey,
-		c.EnableHTTPS, c.SkipVerify, c.MaxRetries, c.RetryTimeout)
 }
 
 // InitializeStorageConfigs 初始化存储服务
@@ -95,7 +69,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 	for name, config := range configs.MysqlGroup {
 		// 检查是否启用
 		if enabled, exists := enabledMysql[name]; !exists || !enabled {
-			pr.Warning("MySQL数据库 %s 未启用", name)
+			printWarning("MySQL数据库 %s 未启用", name)
 			continue
 		}
 
@@ -106,17 +80,17 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterDB(name, NewMysqlStorage(name, db)); err != nil {
-			pr.Error("初始化MySQL连接失败: %s, err: %v", name, err)
+			printError("初始化MySQL连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("MySQL数据库 %s 已注册到存储管理器", name)
+		printSystem("MySQL数据库 %s 已注册到存储管理器", name)
 	}
 
 	for name, config := range configs.RedisGroup {
 		// 检查是否启用
 		if enabled, exists := enabledRedis[name]; !exists || !enabled {
-			pr.Warning("Redis %s 未启用", name)
+			printWarning("Redis %s 未启用", name)
 			continue
 		}
 
@@ -128,18 +102,18 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterRedis(name, NewRedisStorage(name, rds)); err != nil {
-			pr.Error("初始化Redis连接失败: %s, err: %v", name, err)
+			printError("初始化Redis连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Redis %s 已注册到存储管理器", name)
+		printSystem("Redis %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Elasticsearch连接
 	for name, config := range configs.ESGroup {
 		// 检查是否启用
 		if enabled, exists := enabledES[name]; !exists || !enabled {
-			pr.Warning("Elasticsearch %s 未启用", name)
+			printWarning("Elasticsearch %s 未启用", name)
 			continue
 		}
 
@@ -151,11 +125,11 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterES(name, NewESStorage(name, es)); err != nil {
-			pr.Error("初始化Elasticsearch连接失败: %s, err: %v", name, err)
+			printError("初始化Elasticsearch连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Elasticsearch %s 已注册到存储管理器", name)
+		printSystem("Elasticsearch %s 已注册到存储管理器", name)
 	}
 
 	return storageManager, nil
@@ -163,7 +137,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 // InitializeStorage 初始化存储服务
 func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]bool, enabledES map[string]bool) (*StorageManagerImpl, error) {
-	pr.System("初始化存储服务，配置文件: %s", configPath)
+	printSystem("初始化存储服务，配置文件: %s", configPath)
 
 	// 直接使用viper解析配置
 	v := viper.New()
@@ -178,26 +152,17 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 	// 初始化MySQL连接
 	mysqlConfigs := v.GetStringMap("mysql_group")
-	for name, _ := range mysqlConfigs {
+	for name := range mysqlConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledMysql[name]; !exists || !enabled {
-			pr.Warning("MySQL数据库 %s 未启用", name)
+			printWarning("MySQL数据库 %s 未启用", name)
 			continue
 		}
 
-		// 获取MySQL配置
-		mysqlConfig := MysqlConfig{
-			Debug:       v.GetBool(fmt.Sprintf("mysql_group.%s.debug", name)),
-			LogMode:     v.GetInt(fmt.Sprintf("mysql_group.%s.log_mode", name)),
-			Host:        v.GetString(fmt.Sprintf("mysql_group.%s.host", name)),
-			Port:        v.GetInt(fmt.Sprintf("mysql_group.%s.port", name)),
-			Username:    v.GetString(fmt.Sprintf("mysql_group.%s.username", name)),
-			Password:    v.GetString(fmt.Sprintf("mysql_group.%s.password", name)),
-			Database:    v.GetString(fmt.Sprintf("mysql_group.%s.database", name)),
-			Charset:     v.GetString(fmt.Sprintf("mysql_group.%s.charset", name)),
-			MaxIdleConn: v.GetInt(fmt.Sprintf("mysql_group.%s.max_idle_conn", name)),
-			MaxOpenConn: v.GetInt(fmt.Sprintf("mysql_group.%s.max_open_conn", name)),
-			MaxLifeTime: v.GetInt(fmt.Sprintf("mysql_group.%s.max_life_time", name)),
+		// 使用 UnmarshalKey 自动读取配置
+		var mysqlConfig MysqlConfig
+		if err := v.UnmarshalKey(fmt.Sprintf("mysql_group.%s", name), &mysqlConfig); err != nil {
+			return nil, errors.Wrapf(err, "解析MySQL配置失败: %s", name)
 		}
 
 		// 从连接管理器获取连接
@@ -208,28 +173,26 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterDB(name, NewMysqlStorage(name, db)); err != nil {
-			pr.Error("初始化MySQL连接失败: %s, err: %v", name, err)
+			printError("初始化MySQL连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("MySQL数据库 %s 已注册到存储管理器", name)
+		printSystem("MySQL数据库 %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Redis连接
 	redisConfigs := v.GetStringMap("redis_group")
-	for name, _ := range redisConfigs {
+	for name := range redisConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledRedis[name]; !exists || !enabled {
-			pr.Warning("Redis %s 未启用", name)
+			printWarning("Redis %s 未启用", name)
 			continue
 		}
 
-		// 获取Redis配置
-		redisConfig := RedisConfig{
-			Host:     v.GetString(fmt.Sprintf("redis_group.%s.host", name)),
-			Port:     v.GetInt(fmt.Sprintf("redis_group.%s.port", name)),
-			Password: v.GetString(fmt.Sprintf("redis_group.%s.password", name)),
-			Database: v.GetInt(fmt.Sprintf("redis_group.%s.database", name)),
+		// 使用 UnmarshalKey 自动读取配置
+		var redisConfig RedisConfig
+		if err := v.UnmarshalKey(fmt.Sprintf("redis_group.%s", name), &redisConfig); err != nil {
+			return nil, errors.Wrapf(err, "解析Redis配置失败: %s", name)
 		}
 
 		// 从连接管理器获取连接
@@ -240,43 +203,26 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterRedis(name, NewRedisStorage(name, rds)); err != nil {
-			pr.Error("初始化Redis连接失败: %s, err: %v", name, err)
+			printError("初始化Redis连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Redis %s 已注册到存储管理器", name)
+		printSystem("Redis %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Elasticsearch连接
 	esConfigs := v.GetStringMap("es_group")
-	for name, _ := range esConfigs {
+	for name := range esConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledES[name]; !exists || !enabled {
-			pr.Warning("Elasticsearch %s 未启用", name)
+			printWarning("Elasticsearch %s 未启用", name)
 			continue
 		}
 
-		// 获取ES配置
-		var addresses []string
-		if addrs := v.GetStringSlice(fmt.Sprintf("es_group.%s.addresses", name)); len(addrs) > 0 {
-			addresses = addrs
-		} else {
-			// 兼容单个地址的配置
-			if addr := v.GetString(fmt.Sprintf("es_group.%s.address", name)); addr != "" {
-				addresses = []string{addr}
-			}
-		}
-
-		esConfig := ESConfig{
-			Addresses:    addresses,
-			Username:     v.GetString(fmt.Sprintf("es_group.%s.username", name)),
-			Password:     v.GetString(fmt.Sprintf("es_group.%s.password", name)),
-			CloudID:      v.GetString(fmt.Sprintf("es_group.%s.cloud_id", name)),
-			APIKey:       v.GetString(fmt.Sprintf("es_group.%s.api_key", name)),
-			EnableHTTPS:  v.GetBool(fmt.Sprintf("es_group.%s.enable_https", name)),
-			SkipVerify:   v.GetBool(fmt.Sprintf("es_group.%s.skip_verify", name)),
-			MaxRetries:   v.GetInt(fmt.Sprintf("es_group.%s.max_retries", name)),
-			RetryTimeout: v.GetInt(fmt.Sprintf("es_group.%s.retry_timeout", name)),
+		// 使用 UnmarshalKey 自动读取配置
+		var esConfig ESConfig
+		if err := v.UnmarshalKey(fmt.Sprintf("es_group.%s", name), &esConfig); err != nil {
+			return nil, errors.Wrapf(err, "解析Elasticsearch配置失败: %s", name)
 		}
 
 		// 从连接管理器获取连接
@@ -287,11 +233,11 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterES(name, NewESStorage(name, es)); err != nil {
-			pr.Error("初始化Elasticsearch连接失败: %s, err: %v", name, err)
+			printError("初始化Elasticsearch连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Elasticsearch %s 已注册到存储管理器", name)
+		printSystem("Elasticsearch %s 已注册到存储管理器", name)
 	}
 
 	return storageManager, nil
@@ -299,15 +245,13 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 // InitMysql 初始化MySQL连接
 func InitMysql(config MysqlConfig) (*gorm.DB, error) {
-	pr.System("初始化MySQL连接: %s@%s:%d/%s", config.Username, config.Host, config.Port, config.Database)
+	printSystem("初始化MySQL连接: %s@%s:%d/%s", config.Username, config.Host, config.Port, config.Database)
 
 	// 构建DSN
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
 		config.Username, config.Password, config.Host, config.Port, config.Database, config.Charset)
 
-	// 创建代理
-
-	// 日志级别设置
+	// 日志级别映射：1=Silent, 2=Error, 3=Warn, 4=Info
 	var logLevel logger.LogLevel
 	switch config.LogMode {
 	case 1:
@@ -347,13 +291,13 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(config.MaxOpenConn)
 	sqlDB.SetConnMaxLifetime(time.Duration(config.MaxLifeTime) * time.Second)
 
-	pr.System("MySQL连接初始化成功: %s", config.Database)
+	printSystem("MySQL连接初始化成功: %s", config.Database)
 	return db, nil
 }
 
 // InitRedis 初始化Redis连接
 func InitRedis(config RedisConfig) (*redis.Client, error) {
-	pr.System("初始化Redis连接: %s:%d/%d", config.Host, config.Port, config.Database)
+	printSystem("初始化Redis连接: %s:%d/%d", config.Host, config.Port, config.Database)
 
 	// 创建Redis客户端选项
 	options := &redis.Options{
@@ -365,15 +309,13 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 	// 创建Redis客户端
 	redisClient := redis.NewClient(options)
 
-	// 如果使用了代理，添加关闭钩子
-
 	// 测试连接
 	ctx := context.Background()
 	if _, err := redisClient.Ping(ctx).Result(); err != nil {
 		return nil, errors.Wrapf(err, "连接Redis失败: %s", options.Addr)
 	}
 
-	pr.System("Redis连接初始化成功: %s", options.Addr)
+	printSystem("Redis连接初始化成功: %s", options.Addr)
 	return redisClient, nil
 }
 
@@ -381,7 +323,7 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 func InitES(config ESConfig) (*elasticsearch.Client, error) {
 	// 打印连接信息
 	addressesStr := strings.Join(config.Addresses, ", ")
-	pr.System("初始化Elasticsearch连接: %s", addressesStr)
+	printSystem("初始化Elasticsearch连接: %s", addressesStr)
 
 	// 创建ES配置
 	esConfig := elasticsearch.Config{
@@ -437,8 +379,6 @@ func InitES(config ESConfig) (*elasticsearch.Client, error) {
 	}
 	defer info.Body.Close()
 
-	// 注意：这里没有处理代理的关闭问题，在实际使用中可能需要一个管理机制
-
-	pr.System("Elasticsearch连接初始化成功: %s", addressesStr)
+	printSystem("Elasticsearch连接初始化成功: %s", addressesStr)
 	return client, nil
 }

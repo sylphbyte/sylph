@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/sylphbyte/pr"
 )
 
 // StorageManagerImpl 存储管理器实现
@@ -75,7 +74,7 @@ func (sm *StorageManagerImpl) RegisterDB(name string, storage DBStorage) error {
 		sm.defaultDB = name
 	}
 
-	pr.System("已注册数据库: %s", name)
+	printSystem("已注册数据库: %s", name)
 	return nil
 }
 
@@ -122,7 +121,7 @@ func (sm *StorageManagerImpl) RegisterRedis(name string, storage RedisStorage) e
 		sm.defaultRedis = name
 	}
 
-	pr.System("已注册Redis: %s", name)
+	printSystem("已注册Redis: %s", name)
 	return nil
 }
 
@@ -169,7 +168,7 @@ func (sm *StorageManagerImpl) RegisterES(name string, storage ESStorage) error {
 		sm.defaultES = name
 	}
 
-	pr.System("已注册Elasticsearch: %s", name)
+	printSystem("已注册Elasticsearch: %s", name)
 	return nil
 }
 
@@ -217,7 +216,7 @@ func (sm *StorageManagerImpl) HealthCheck(ctx Context) map[string]*HealthStatus 
 				status.State = StorageStateError
 				status.ErrorMsg = err.Error()
 				status.FailCount++
-				pr.Warning("存储 %s 健康检查失败: %v", name, err)
+				printWarning("存储 %s 健康检查失败: %v", name, err)
 			}
 		} else {
 			status.State = StorageStateConnected
@@ -242,9 +241,9 @@ func (sm *StorageManagerImpl) CloseAll(ctx Context) error {
 	for name, storage := range storages {
 		if err := storage.Disconnect(ctx); err != nil {
 			errs = append(errs, errors.Wrapf(err, "关闭存储 %s 失败", name))
-			pr.Warning("关闭存储 %s 失败: %v", name, err)
+			printWarning("关闭存储 %s 失败: %v", name, err)
 		} else {
-			pr.System("已关闭存储: %s", name)
+			printSystem("已关闭存储: %s", name)
 		}
 	}
 
