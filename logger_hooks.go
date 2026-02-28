@@ -76,6 +76,57 @@ func (h *LoggerBufferHook) Fire(entry *logrus.Entry) error {
 	// 克隆Data字段，避免并发修改问题
 	clone.Data = make(logrus.Fields, len(entry.Data))
 	for k, v := range entry.Data {
+		// 对 LoggerMessage 进行深拷贝，因为原对象可能被 Release() 清空
+		if k == loggerMessageKey {
+			if msg, ok := v.(*LoggerMessage); ok && msg != nil {
+				// 深拷贝 LoggerMessage
+				clonedMsg := &LoggerMessage{
+					Location: msg.Location,
+					Message:  msg.Message,
+					Error:    msg.Error,
+					Stack:    msg.Stack,
+				}
+				// 拷贝 Header（完整拷贝，不生成新的 TraceId）
+				if msg.Header != nil {
+					clonedMsg.Header = &Header{
+						EndpointVal: msg.Header.EndpointVal,
+						MarkVal:     msg.Header.MarkVal,
+						RefVal:      msg.Header.RefVal,
+						PathVal:     msg.Header.PathVal,
+						TraceIdVal:  msg.Header.TraceIdVal,
+						IPVal:       msg.Header.IPVal,
+					}
+				}
+				// 拷贝 Marks
+				if msg.Marks != nil {
+					clonedMsg.Marks = make(map[string]any, len(msg.Marks))
+					for mk, mv := range msg.Marks {
+						clonedMsg.Marks[mk] = mv
+					}
+				}
+				// 拷贝 Data (可能是 map 或其他类型)
+				if msg.Data != nil {
+					if dataMap, ok := msg.Data.(map[string]any); ok {
+						clonedData := make(map[string]any, len(dataMap))
+						for dk, dv := range dataMap {
+							clonedData[dk] = dv
+						}
+						clonedMsg.Data = clonedData
+					} else {
+						clonedMsg.Data = msg.Data
+					}
+				}
+				// 拷贝 Extra
+				if msg.Extra != nil {
+					clonedMsg.Extra = make(map[string]any, len(msg.Extra))
+					for ek, ev := range msg.Extra {
+						clonedMsg.Extra[ek] = ev
+					}
+				}
+				clone.Data[k] = clonedMsg
+				continue
+			}
+		}
 		clone.Data[k] = v
 	}
 

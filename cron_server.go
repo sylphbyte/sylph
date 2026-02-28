@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	cron "github.com/robfig/cron/v3"
-	"github.com/sylphbyte/pr"
 )
 
 const (
@@ -82,7 +81,7 @@ func (c CrontabModeName) String() string {
 func (c CrontabModeName) Mode() CrontabMode {
 	mode, ok := crontabNameModeMapping[c]
 	if !ok {
-		pr.Panic("not has mode name: %s", c)
+		printPanic("not has mode name: %s", c)
 	}
 
 	return mode
@@ -228,11 +227,9 @@ func (c *CronServer) modeOptions() (opts []cron.Option) {
 	case CrontabSkipMode:
 		// 如果上一个任务还在执行，则跳过本次执行
 		wrapper = cron.SkipIfStillRunning(c.logger)
-		break
 	case CrontabDelayMode:
 		// 如果上一个任务还在执行，则等待执行完成后再执行下一个
 		wrapper = cron.DelayIfStillRunning(c.logger)
-		break
 	default:
 		// 默认模式不需要额外的包装器
 		return
@@ -279,13 +276,13 @@ func (c *CronServer) bindSwitchedHandler() {
 				"task": conf.Name.Name(),
 			})
 
-			pr.Warning("CronServer task %s not setting\n", conf.Name)
+			printWarning("CronServer task %s not setting\n", conf.Name)
 			continue
 		}
 
 		// 添加任务到cron调度器
 		if _, err := c.cron.AddFunc(conf.Spec, c.takeRunHandler(conf.Name)); err != nil {
-			pr.Panic("CronServer bindSwitchedHandler failed: %+v\n", err)
+			printPanic("CronServer bindSwitchedHandler failed: %+v\n", err)
 		}
 	}
 }
@@ -300,9 +297,15 @@ func (c *CronServer) bindSwitchedHandler() {
 //   - func(): 可以被cron库调用的无参数函数
 func (c *CronServer) takeRunHandler(name TaskName) func() {
 	return func() {
-		handler := c.tasks[name]
+		// 使用并发安全的 receiveTask 方法获取任务处理函数
+		handler, ok := c.receiveTask(name)
+		if !ok {
+			c.ctx.Warn("server.CronServer.takeRunHandler", "task not found", map[string]any{
+				"task": name.Name(),
+			})
+			return
+		}
 
-		pr.Red("run name: %s\n", name)
 		// 克隆上下文，避免污染原始上下文
 		ctx := c.ctx.Clone()
 

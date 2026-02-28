@@ -12,26 +12,67 @@ import (
 // LoggerMessage 日志消息结构体
 // 简化设计，合并了之前的LoggerMessage和LoggerFormatMessage
 // 直接使用这一个消息类型处理所有日志场景
+//
+// 并发安全说明：
+//   - LoggerMessage 的修改操作（WithField, WithFields）是并发安全的
+//   - 但建议每个 goroutine 使用自己的 LoggerMessage 实例，以获得最佳性能
+//   - 如果必须在多个 goroutine 间共享，请确保在修改前已完成初始化
 type LoggerMessage struct {
-	Header   *Header                `json:"header,omitempty"` // 请求头信息
+	Header   *Header        `json:"header,omitempty"` // 请求头信息
 	Marks    map[string]any `json:"-"`                // 标记信息
-	Location string                 `json:"-"`                // 代码位置
-	Message  string                 `json:"-"`                // 日志消息
-	Data     any                    `json:"data,omitempty"`   // 数据内容
-	Error    string                 `json:"error,omitempty"`  // 错误信息
-	Stack    string                 `json:"stack,omitempty"`  // 堆栈信息
+	Location string         `json:"-"`                // 代码位置
+	Message  string         `json:"-"`                // 日志消息
+	Data     any            `json:"data,omitempty"`   // 数据内容
+	Error    string         `json:"error,omitempty"`  // 错误信息
+	Stack    string         `json:"stack,omitempty"`  // 堆栈信息
 	Extra    map[string]any `json:"extra,omitempty"`  // 扩展字段
+	mu       sync.RWMutex   `json:"-"`                // 保护字段的并发访问
 }
 
-// NewLoggerMessage 创建新的日志消息对象
-// 简化的创建函数，不使用对象池
+// loggerMessagePool 日志消息对象池
+// 使用 sync.Pool 减少对象分配，提升性能
+var loggerMessagePool = sync.Pool{
+	New: func() any {
+		return &LoggerMessage{}
+	},
+}
+
+// NewLoggerMessage 从对象池中获取日志消息对象
+// 使用 sync.Pool 优化，减少内存分配
+// 使用完毕后应调用 Release() 方法将对象放回池中
 func NewLoggerMessage() *LoggerMessage {
-	return &LoggerMessage{}
+	return loggerMessagePool.Get().(*LoggerMessage)
+}
+
+// Release 将消息对象重置并放回对象池
+// 重置所有字段，避免数据污染
+// 应在日志记录完成后调用，确保对象可以安全复用
+func (m *LoggerMessage) Release() {
+	// 使用锁保护重置操作，避免与正在进行的修改操作冲突
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 重置所有字段
+	m.Header = nil
+	m.Marks = nil
+	m.Location = ""
+	m.Message = ""
+	m.Data = nil
+	m.Error = ""
+	m.Stack = ""
+	m.Extra = nil
+
+	// 放回对象池
+	loggerMessagePool.Put(m)
 }
 
 // WithField 添加单个数据字段
 // 链式调用API，使用更便捷
+// 并发安全：使用读写锁保护 Data 字段的并发访问
 func (m *LoggerMessage) WithField(key string, value any) *LoggerMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.Data == nil {
 		m.Data = make(map[string]any)
 	}
@@ -51,13 +92,21 @@ func (m *LoggerMessage) WithField(key string, value any) *LoggerMessage {
 }
 
 // WithFields 批量添加数据字段
+// 并发安全：使用读写锁保护 Data 字段的并发访问
 func (m *LoggerMessage) WithFields(fields map[string]any) *LoggerMessage {
 	if fields == nil {
 		return m
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.Data == nil {
-		m.Data = fields
+		// 如果 Data 为 nil，直接使用传入的 fields（创建副本避免外部修改影响）
+		m.Data = make(map[string]any, len(fields))
+		for k, v := range fields {
+			m.Data.(map[string]any)[k] = v
+		}
 		return m
 	}
 
@@ -78,34 +127,49 @@ func (m *LoggerMessage) WithFields(fields map[string]any) *LoggerMessage {
 }
 
 // WithError 添加错误信息
+// 并发安全：使用读写锁保护 Error 字段的并发访问
 func (m *LoggerMessage) WithError(err error) *LoggerMessage {
 	if err != nil {
+		m.mu.Lock()
 		m.Error = err.Error()
+		m.mu.Unlock()
 	}
 	return m
 }
 
 // WithLocation 设置代码位置
+// 并发安全：使用读写锁保护 Location 字段的并发访问
 func (m *LoggerMessage) WithLocation(location string) *LoggerMessage {
+	m.mu.Lock()
 	m.Location = location
+	m.mu.Unlock()
 	return m
 }
 
 // WithHeader 设置请求头
+// 并发安全：使用读写锁保护 Header 字段的并发访问
 func (m *LoggerMessage) WithHeader(header *Header) *LoggerMessage {
+	m.mu.Lock()
 	m.Header = header
+	m.mu.Unlock()
 	return m
 }
 
 // WithStack 设置堆栈信息
+// 并发安全：使用读写锁保护 Stack 字段的并发访问
 func (m *LoggerMessage) WithStack(stack string) *LoggerMessage {
+	m.mu.Lock()
 	m.Stack = stack
+	m.mu.Unlock()
 	return m
 }
 
 // ToLogrusFields 将消息转换为logrus字段
 // 内部使用，用于与logrus集成
+// 并发安全：使用读锁保护读取操作
 func (m *LoggerMessage) ToLogrusFields() logrus.Fields {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return logrus.Fields{"_message": m}
 }
 
@@ -192,8 +256,9 @@ func (l *Logger) IsClosed() bool {
 // logMessage 通用日志记录处理
 // 根据配置选择同步或异步方式记录日志
 func (l *Logger) logMessage(level logrus.Level, message *LoggerMessage) {
-	// 已关闭则不处理
+	// 已关闭则不处理，但需要释放消息对象
 	if l.IsClosed() {
+		message.Release()
 		return
 	}
 
@@ -201,7 +266,9 @@ func (l *Logger) logMessage(level logrus.Level, message *LoggerMessage) {
 	if l.opt.Async {
 		l.asyncLog(level, message)
 	} else {
+		// 同步日志：立即处理并释放
 		l.syncLog(level, message)
+		message.Release()
 	}
 }
 
@@ -214,6 +281,7 @@ func (l *Logger) asyncLog(level logrus.Level, message *LoggerMessage) {
 	// 在goroutine中处理日志
 	go func(msg *LoggerMessage) {
 		defer l.wg.Done()
+		defer msg.Release() // 确保在使用完后将对象放回池中
 
 		select {
 		case <-l.ctx.Done():
@@ -228,6 +296,7 @@ func (l *Logger) asyncLog(level logrus.Level, message *LoggerMessage) {
 
 // syncLog 同步记录日志
 // 直接处理日志消息
+// 注意：同步日志模式下，message 会在调用方释放，这里不负责释放
 func (l *Logger) syncLog(level logrus.Level, message *LoggerMessage) {
 	if l.entry == nil {
 		return

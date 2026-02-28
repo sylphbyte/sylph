@@ -80,11 +80,8 @@ func (l *loggerManager) Receive(name string) (logger ILogger) {
 	// 使用LoadOrStore确保即使有并发创建，我们也只存储一个logger实例
 	actualValue, loaded := l.loggers.LoadOrStore(key, newLogger)
 	if loaded {
-		// 如果另一个goroutine已经存储了一个logger，则使用那个并清理我们创建的
-		if asyncLogger, ok := newLogger.(*AsyncLogger); ok && !l.isAsyncEnabled() {
-			// 如果我们创建了AsyncLogger但不再需要它，关闭它
-			asyncLogger.Close()
-		}
+		// 竞争失败，关闭未使用的 logger（无论什么类型）
+		newLogger.Close()
 		return actualValue.(ILogger)
 	}
 

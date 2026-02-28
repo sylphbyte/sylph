@@ -7,34 +7,6 @@ import (
 	"time"
 )
 
-// init 全局初始化函数，优化系统性能
-// 在包导入时自动执行，设置适当的系统参数以获得更好的性能
-//
-// 功能说明:
-//   - 调整GOMAXPROCS以充分利用CPU资源
-//   - 优化GC参数，减少GC频率，平衡内存使用和性能
-//   - 设置GC并行度，减少GC暂停时间
-//
-// 逻辑说明:
-//   - 将GOMAXPROCS设置为CPU核心数，避免上下文切换开销
-//   - 增加GC百分比，降低GC触发频率，减轻GC压力
-//   - 限制GC最大线程数，保证应用程序有足够资源
-func init() {
-	// 设置适当的GOMAXPROCS以避免超订阅
-	// 将Go运行时使用的CPU数量设置为机器的逻辑CPU数量
-	//cpus := runtime.NumCPU()
-	//runtime.GOMAXPROCS(cpus)
-	//
-	//// 调整GC参数，在高并发场景下平衡GC压力和内存使用
-	//// 默认为100，增加这个值会减少GC频率但增加内存使用
-	//// 200表示当内存使用量达到上次GC后内存使用量的300%时触发GC
-	//debug.SetGCPercent(200)
-	//
-	//// 为了减少GC暂停时间，可以设置较小的并行度
-	//// 控制GC使用的最大线程数，这里设置为CPU数量的两倍
-	//debug.SetMaxThreads(cpus * 2)
-}
-
 // 为常用的小对象添加对象池以减少GC压力
 var (
 	// mapPool 是map[string]any对象的池

@@ -1,10 +1,13 @@
 package sylph
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/viper"
-	"github.com/sylphbyte/pr"
+	"gopkg.in/yaml.v3"
 )
 
 var _ IConfigParser = (*Parser)(nil)
@@ -23,19 +26,58 @@ type Parser struct {
 	opt IOption
 }
 
-func (c Parser) ParseFile(filepath string, conf any) (err error) {
-	pr.System("read config yaml: %s\n", filepath)
+func (c Parser) ParseFile(filePath string, conf any) (err error) {
+	printSystem("read config yaml: %s\n", filePath)
 
-	viper.SetConfigName(filepath)
+	// 如果需要保持 key 大小写，使用 yaml.v3 直接解析
+	if c.opt.IsPreserveKeyCase() {
+		return c.parseFileWithYaml(filePath, conf)
+	}
+
+	// 默认使用 viper 解析
+	viper.SetConfigName(filePath)
 	c.envRewriteParse()
 	c.withOption()
 
 	if ignoreErr := viper.ReadInConfig(); ignoreErr != nil {
-		pr.Error("read config %s failed: %v\n", filepath, ignoreErr)
+		printError("read config %s failed: %v\n", filePath, ignoreErr)
 	}
 
 	if err = viper.Unmarshal(conf); err != nil {
-		pr.Error("read config %s failed: %v\n", filepath, err)
+		printError("read config %s failed: %v\n", filePath, err)
+	}
+
+	return
+}
+
+// parseFileWithYaml 使用 yaml.v3 直接解析，保持 map key 大小写
+func (c Parser) parseFileWithYaml(filePath string, conf any) (err error) {
+	// 查找配置文件
+	var fullPath string
+	for _, configPath := range c.opt.TakeConfigPaths() {
+		candidate := filepath.Join(configPath, filePath)
+		if !strings.HasSuffix(candidate, ".yaml") && !strings.HasSuffix(candidate, ".yml") {
+			candidate += ".yaml"
+		}
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			fullPath = candidate
+			break
+		}
+	}
+
+	if fullPath == "" {
+		printError("config file not found: %s\n", filePath)
+		return errors.New("config file not found")
+	}
+
+	var data []byte
+	if data, err = os.ReadFile(fullPath); err != nil {
+		printError("read config %s failed: %v\n", fullPath, err)
+		return errors.Wrap(err, "read config failed")
+	}
+
+	if err = yaml.Unmarshal(data, conf); err != nil {
+		printError("parse config %s failed: %v\n", fullPath, err)
 	}
 
 	return

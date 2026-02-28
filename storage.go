@@ -12,7 +12,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
-	"github.com/sylphbyte/pr"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -70,7 +69,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 	for name, config := range configs.MysqlGroup {
 		// 检查是否启用
 		if enabled, exists := enabledMysql[name]; !exists || !enabled {
-			pr.Warning("MySQL数据库 %s 未启用", name)
+			printWarning("MySQL数据库 %s 未启用", name)
 			continue
 		}
 
@@ -81,17 +80,17 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterDB(name, NewMysqlStorage(name, db)); err != nil {
-			pr.Error("初始化MySQL连接失败: %s, err: %v", name, err)
+			printError("初始化MySQL连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("MySQL数据库 %s 已注册到存储管理器", name)
+		printSystem("MySQL数据库 %s 已注册到存储管理器", name)
 	}
 
 	for name, config := range configs.RedisGroup {
 		// 检查是否启用
 		if enabled, exists := enabledRedis[name]; !exists || !enabled {
-			pr.Warning("Redis %s 未启用", name)
+			printWarning("Redis %s 未启用", name)
 			continue
 		}
 
@@ -103,18 +102,18 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterRedis(name, NewRedisStorage(name, rds)); err != nil {
-			pr.Error("初始化Redis连接失败: %s, err: %v", name, err)
+			printError("初始化Redis连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Redis %s 已注册到存储管理器", name)
+		printSystem("Redis %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Elasticsearch连接
 	for name, config := range configs.ESGroup {
 		// 检查是否启用
 		if enabled, exists := enabledES[name]; !exists || !enabled {
-			pr.Warning("Elasticsearch %s 未启用", name)
+			printWarning("Elasticsearch %s 未启用", name)
 			continue
 		}
 
@@ -126,11 +125,11 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterES(name, NewESStorage(name, es)); err != nil {
-			pr.Error("初始化Elasticsearch连接失败: %s, err: %v", name, err)
+			printError("初始化Elasticsearch连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Elasticsearch %s 已注册到存储管理器", name)
+		printSystem("Elasticsearch %s 已注册到存储管理器", name)
 	}
 
 	return storageManager, nil
@@ -138,7 +137,7 @@ func InitializeStorageConfigs(configs *StorageConfigs, enabledMysql, enabledRedi
 
 // InitializeStorage 初始化存储服务
 func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]bool, enabledES map[string]bool) (*StorageManagerImpl, error) {
-	pr.System("初始化存储服务，配置文件: %s", configPath)
+	printSystem("初始化存储服务，配置文件: %s", configPath)
 
 	// 直接使用viper解析配置
 	v := viper.New()
@@ -156,7 +155,7 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 	for name := range mysqlConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledMysql[name]; !exists || !enabled {
-			pr.Warning("MySQL数据库 %s 未启用", name)
+			printWarning("MySQL数据库 %s 未启用", name)
 			continue
 		}
 
@@ -174,11 +173,11 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterDB(name, NewMysqlStorage(name, db)); err != nil {
-			pr.Error("初始化MySQL连接失败: %s, err: %v", name, err)
+			printError("初始化MySQL连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("MySQL数据库 %s 已注册到存储管理器", name)
+		printSystem("MySQL数据库 %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Redis连接
@@ -186,7 +185,7 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 	for name := range redisConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledRedis[name]; !exists || !enabled {
-			pr.Warning("Redis %s 未启用", name)
+			printWarning("Redis %s 未启用", name)
 			continue
 		}
 
@@ -204,11 +203,11 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterRedis(name, NewRedisStorage(name, rds)); err != nil {
-			pr.Error("初始化Redis连接失败: %s, err: %v", name, err)
+			printError("初始化Redis连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Redis %s 已注册到存储管理器", name)
+		printSystem("Redis %s 已注册到存储管理器", name)
 	}
 
 	// 初始化Elasticsearch连接
@@ -216,7 +215,7 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 	for name := range esConfigs {
 		// 检查是否启用
 		if enabled, exists := enabledES[name]; !exists || !enabled {
-			pr.Warning("Elasticsearch %s 未启用", name)
+			printWarning("Elasticsearch %s 未启用", name)
 			continue
 		}
 
@@ -234,11 +233,11 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 		// 注册到存储管理器
 		if err = storageManager.RegisterES(name, NewESStorage(name, es)); err != nil {
-			pr.Error("初始化Elasticsearch连接失败: %s, err: %v", name, err)
+			printError("初始化Elasticsearch连接失败: %s, err: %v", name, err)
 			continue
 		}
 
-		pr.System("Elasticsearch %s 已注册到存储管理器", name)
+		printSystem("Elasticsearch %s 已注册到存储管理器", name)
 	}
 
 	return storageManager, nil
@@ -246,7 +245,7 @@ func InitializeStorage(configPath string, enabledMysql, enabledRedis map[string]
 
 // InitMysql 初始化MySQL连接
 func InitMysql(config MysqlConfig) (*gorm.DB, error) {
-	pr.System("初始化MySQL连接: %s@%s:%d/%s", config.Username, config.Host, config.Port, config.Database)
+	printSystem("初始化MySQL连接: %s@%s:%d/%s", config.Username, config.Host, config.Port, config.Database)
 
 	// 构建DSN
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
@@ -292,13 +291,13 @@ func InitMysql(config MysqlConfig) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(config.MaxOpenConn)
 	sqlDB.SetConnMaxLifetime(time.Duration(config.MaxLifeTime) * time.Second)
 
-	pr.System("MySQL连接初始化成功: %s", config.Database)
+	printSystem("MySQL连接初始化成功: %s", config.Database)
 	return db, nil
 }
 
 // InitRedis 初始化Redis连接
 func InitRedis(config RedisConfig) (*redis.Client, error) {
-	pr.System("初始化Redis连接: %s:%d/%d", config.Host, config.Port, config.Database)
+	printSystem("初始化Redis连接: %s:%d/%d", config.Host, config.Port, config.Database)
 
 	// 创建Redis客户端选项
 	options := &redis.Options{
@@ -316,7 +315,7 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 		return nil, errors.Wrapf(err, "连接Redis失败: %s", options.Addr)
 	}
 
-	pr.System("Redis连接初始化成功: %s", options.Addr)
+	printSystem("Redis连接初始化成功: %s", options.Addr)
 	return redisClient, nil
 }
 
@@ -324,7 +323,7 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 func InitES(config ESConfig) (*elasticsearch.Client, error) {
 	// 打印连接信息
 	addressesStr := strings.Join(config.Addresses, ", ")
-	pr.System("初始化Elasticsearch连接: %s", addressesStr)
+	printSystem("初始化Elasticsearch连接: %s", addressesStr)
 
 	// 创建ES配置
 	esConfig := elasticsearch.Config{
@@ -380,6 +379,6 @@ func InitES(config ESConfig) (*elasticsearch.Client, error) {
 	}
 	defer info.Body.Close()
 
-	pr.System("Elasticsearch连接初始化成功: %s", addressesStr)
+	printSystem("Elasticsearch连接初始化成功: %s", addressesStr)
 	return client, nil
 }

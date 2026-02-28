@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/pkg/errors"
 )
 
 // LogLevel 定义日志级别类型
@@ -54,7 +56,7 @@ type IJwtClaim interface {
 //	    logCtx.Info("HandleRequest", "开始处理请求", nil)
 //	    // 处理逻辑
 //	    if err != nil {
-//	        logCtx.Error("HandleRequest", "处理请求失败", err, map[string]interface{}{"request_id": reqId})
+//	        logCtx.Error("HandleRequest", "处理请求失败", err, map[string]any{"request_id": reqId})
 //	    }
 //	}
 type LogContext interface {
@@ -110,7 +112,7 @@ type DataContext interface {
 //	    ctx.Set("start_time", time.Now())
 //
 //	    // 记录日志
-//	    ctx.Info("HandleUserRequest", "开始处理用户请求", map[string]interface{}{
+//	    ctx.Info("HandleUserRequest", "开始处理用户请求", map[string]any{
 //	        "trace_id": traceId,
 //	        "path": header.Path(),
 //	    })
@@ -138,7 +140,12 @@ type Context interface {
 	WithMark(marks ...string)   // 设置标记，用于请求分类和追踪
 	TakeMarks() map[string]any  // 获取标记信息
 	Clone() Context             // 创建上下文副本，用于派生新的上下文
-	TakeLogger() ILogger        // 获取日志记录器，用于自定义日志记录
+	SetAbort()
+	IsAbort() bool
+	BindErrorInfo(err error)
+	TakeErrorInfo() error
+
+	TakeLogger() ILogger // 获取日志记录器，用于自定义日志记录
 
 	// 日志方法（实现LogContext接口）
 	Info(location, msg string, data any)
@@ -179,8 +186,6 @@ func NewContext(endpoint Endpoint, path string) Context {
 
 	return &DefaultContext{
 		ctxInternal: context.Background(),
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      header,
 		logger:      _loggerManager.Receive(string(endpoint)),
 	}
@@ -197,8 +202,8 @@ func NewContext(endpoint Endpoint, path string) Context {
 //
 // 字段说明:
 //   - ctxInternal: 内部标准库上下文，提供取消和超时功能
-//   - dataCache: 并发安全的键值存储，用于请求生命周期内的数据存储
-//   - rwMutex: 读写锁，保护dataCache的并发访问
+//   - dataCache: 并发安全的键值存储（sync.Map），用于请求生命周期内的数据存储
+//   - rwMutex: 读写锁，保护 Marks 的并发访问
 //   - Header: 请求头信息，包含端点、路径、追踪ID等
 //   - Marks: 自定义标记列表，用于请求分类和追踪
 //   - logger: 日志记录器，用于记录不同级别的日志
@@ -217,12 +222,32 @@ func NewContext(endpoint Endpoint, path string) Context {
 //	ctx.Set("user_id", "12345")
 //	// ...其他操作
 type DefaultContext struct {
-	ctxInternal context.Context        // 内部上下文
-	dataCache   map[string]interface{} // 并发安全的键值存储，使用读写锁保护
-	rwMutex     sync.RWMutex           // 保护dataCache的读写锁
-	Header      *Header                `json:"header"` // 请求头信息
-	Marks       []string               `json:"marks"`  // 自定义标记
-	logger      ILogger                // 日志记录器
+	ctxInternal context.Context // 内部上下文
+	dataCache   sync.Map        // 并发安全的键值存储，无需额外锁
+	rwMutex     sync.RWMutex    // 保护 Marks 的读写锁
+	Header      *Header         `json:"header"` // 请求头信息
+	Marks       []string        `json:"marks"`  // 自定义标记
+
+	logger ILogger // 日志记录器
+	abort  int32   // 使用原子操作保护，1表示已中止，0表示未中止
+	errors error
+}
+
+func (d *DefaultContext) BindErrorInfo(err error) {
+	if err == nil {
+		return
+	}
+
+	if d.errors == nil {
+		d.SetAbort()
+		d.errors = err
+	} else {
+		d.errors = errors.Wrap(d.errors, err.Error())
+	}
+}
+
+func (d *DefaultContext) TakeErrorInfo() error {
+	return d.errors
 }
 
 // WithTimeout 创建一个带超时限制的新上下文
@@ -255,12 +280,22 @@ func (d *DefaultContext) WithTimeout(duration time.Duration) (timeoutCtx Context
 	ctx, cancel := context.WithTimeout(d.ctxInternal, duration)
 	return &DefaultContext{
 		ctxInternal: ctx,
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
 	}, cancel
+}
+
+// SetAbort 设置中止标志
+// 并发安全：使用原子操作保护
+func (d *DefaultContext) SetAbort() {
+	atomic.StoreInt32(&d.abort, 1)
+}
+
+// IsAbort 检查是否已中止
+// 并发安全：使用原子操作保护
+func (d *DefaultContext) IsAbort() bool {
+	return atomic.LoadInt32(&d.abort) == 1
 }
 
 // WithValue 创建一个带键值对的新上下文
@@ -280,8 +315,6 @@ func (d *DefaultContext) WithTimeout(duration time.Duration) (timeoutCtx Context
 func (d *DefaultContext) WithValue(key, val any) Context {
 	return &DefaultContext{
 		ctxInternal: context.WithValue(d.ctxInternal, key, val),
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
@@ -332,14 +365,20 @@ func (d *DefaultContext) WithMark(marks ...string) {
 //   - map[string]any: 标记及其对应值的映射
 //
 // 实现逻辑:
-//  1. 遍历Marks切片中的所有标记
-//  2. 对每个标记，尝试从dataCache中获取同名键的值
-//  3. 如果找到对应值，则将标记和值加入返回的映射
-//  4. 允许标记不仅作为标识，还可作为dataCache的键使用
+//  1. 使用读锁保护 Marks 切片的读取
+//  2. 遍历Marks切片中的所有标记
+//  3. 对每个标记，尝试从dataCache中获取同名键的值
+//  4. 如果找到对应值，则将标记和值加入返回的映射
+//  5. 允许标记不仅作为标识，还可作为dataCache的键使用
+//
+// 并发安全：使用读锁保护 Marks 切片的读取，避免与 WithMark() 的写入操作冲突
 func (d *DefaultContext) TakeMarks() map[string]any {
-	marksMap := make(map[string]any)
+	d.rwMutex.RLock()
+	marks := d.Marks // 复制引用，避免在锁内进行耗时操作
+	d.rwMutex.RUnlock()
 
-	for _, mark := range d.Marks {
+	marksMap := make(map[string]any)
+	for _, mark := range marks {
 		if val, ok := d.Get(mark); ok {
 			marksMap[mark] = val
 		}
@@ -379,7 +418,10 @@ func (d *DefaultContext) TakeHeader() IHeader {
 func (d *DefaultContext) makeLoggerMessage(location string, msg string, data any) *LoggerMessage {
 	// 创建新的消息对象
 	message := NewLoggerMessage()
-	message.Header = d.Header
+	// 使用原子加载获取 Header，保证并发安全
+	if h, ok := d.TakeHeader().(*Header); ok {
+		message.Header = h
+	}
 	message.Marks = d.TakeMarks()
 	message.Location = location
 	message.Message = msg
@@ -460,8 +502,6 @@ func (d *DefaultContext) TakeLogger() ILogger {
 func (d *DefaultContext) Clone() Context {
 	return &DefaultContext{
 		ctxInternal: context.Background(),
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header.Clone(),
 		logger:      d.logger,
 	}
@@ -469,11 +509,9 @@ func (d *DefaultContext) Clone() Context {
 
 // Get 获取指定键的值
 // 实现DataContext接口
+// 并发安全：使用 sync.Map
 func (d *DefaultContext) Get(key string) (val any, ok bool) {
-	d.rwMutex.RLock()
-	val, ok = d.dataCache[key]
-	d.rwMutex.RUnlock()
-	return
+	return d.dataCache.Load(key)
 }
 
 func (d *DefaultContext) GetString(key string) (string, bool) {
@@ -507,13 +545,9 @@ func (d *DefaultContext) MarkSet(key string, val any) {
 }
 
 // Set 设置指定键的值
+// 并发安全：使用 sync.Map
 func (d *DefaultContext) Set(key string, val any) {
-	// 可以在此添加安全类型检查
-	// 但为了高性能，暂时不添加
-
-	d.rwMutex.Lock()
-	d.dataCache[key] = val
-	d.rwMutex.Unlock()
+	d.dataCache.Store(key, val)
 }
 
 // StoreJwtClaim 存储JWT声明
@@ -558,8 +592,6 @@ func (d *DefaultContext) WithDeadline(deadline time.Time) (deadlineCtx Context, 
 	ctx, cancel := context.WithDeadline(d.ctxInternal, deadline)
 	return &DefaultContext{
 		ctxInternal: ctx,
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
@@ -580,8 +612,6 @@ func (d *DefaultContext) WithCancel() (cancelCtx Context, cancel context.CancelF
 	ctx, cancel := context.WithCancel(d.ctxInternal)
 	return &DefaultContext{
 		ctxInternal: ctx,
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
@@ -603,8 +633,6 @@ func (d *DefaultContext) WithCancelCause() (cancelCtx Context, cancel context.Ca
 	ctx, cancel := context.WithCancelCause(d.ctxInternal)
 	return &DefaultContext{
 		ctxInternal: ctx,
-		dataCache:   make(map[string]interface{}, 16),
-		rwMutex:     sync.RWMutex{},
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
