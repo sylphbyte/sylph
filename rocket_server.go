@@ -102,8 +102,8 @@ func (r RocketConsumer) makeSubscriptionExpressions() (expressions map[string]*m
 //   - []mq.SimpleConsumerOption: 客户端配置选项列表
 func (r RocketConsumer) TakeOptions() []mq.SimpleConsumerOption {
 	return []mq.SimpleConsumerOption{
-		mq.WithAwaitDuration(r.TakeWait()),
-		mq.WithSubscriptionExpressions(r.makeSubscriptionExpressions()),
+		mq.WithSimpleAwaitDuration(r.TakeWait()),
+		mq.WithSimpleSubscriptionExpressions(r.makeSubscriptionExpressions()),
 	}
 }
 
