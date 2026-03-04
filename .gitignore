@@ -15,3 +15,4 @@ go.work
 /work
 /tasks
 *.out
+*.bak
