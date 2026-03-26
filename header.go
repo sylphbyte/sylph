@@ -39,8 +39,7 @@ type Header struct {
 	RefVal      string   `json:"@ref,omitempty"`     // 来源引用，用于追踪请求来源
 	PathVal     string   `json:"@path,omitempty"`    // 当前路径，表示请求的路径
 	TraceIdVal  string   `json:"trace_id,omitempty"` // 跟踪ID，用于请求追踪
-
-	IPVal string `json:"ip,omitempty"` // 客户端IP地址
+	IPVal       string   `json:"ip,omitempty"`       // 客户端IP地址
 }
 
 // NewHeader 创建新的头部信息实例
