@@ -35,11 +35,13 @@ type MysqlConfig struct {
 
 // RedisConfig Redis配置结构体
 type RedisConfig struct {
-	Host     string `yaml:"host" mapstructure:"host"`
-	Port     int    `yaml:"port" mapstructure:"port"`
-	Password string `yaml:"password" mapstructure:"password"`
-	Database int    `yaml:"database" mapstructure:"database"`
-	Debug    bool   `yaml:"debug" mapstructure:"debug"`
+	Host             string `yaml:"host" mapstructure:"host"`
+	Port             int    `yaml:"port" mapstructure:"port"`
+	Password         string `yaml:"password" mapstructure:"password"`
+	Database         int    `yaml:"database" mapstructure:"database"`
+	Debug            bool   `yaml:"debug" mapstructure:"debug"`
+	Protocol         int    `yaml:"protocol" mapstructure:"protocol"`                   // redis协议
+	DisableIndentity bool   `yaml:"disable_indentity" mapstructure:"disable_indentity"` // 不发送CLIENT SETINFO
 }
 
 // ESConfig Elasticsearch配置结构体
@@ -302,9 +304,11 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 
 	// 创建Redis客户端选项
 	options := &redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", config.Host, config.Port),
-		Password: config.Password,
-		DB:       config.Database,
+		Addr:             fmt.Sprintf("%s:%d", config.Host, config.Port),
+		Password:         config.Password,
+		DB:               config.Database,
+		Protocol:         2,    // 不尝试 HELLO，直接用 RESP2
+		DisableIndentity: true, // 不发送 CLIENT SETINFO
 	}
 
 	// 创建Redis客户端
