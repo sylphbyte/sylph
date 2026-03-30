@@ -307,8 +307,8 @@ func InitRedis(config RedisConfig) (*redis.Client, error) {
 		Addr:             fmt.Sprintf("%s:%d", config.Host, config.Port),
 		Password:         config.Password,
 		DB:               config.Database,
-		Protocol:         2,    // 不尝试 HELLO，直接用 RESP2
-		DisableIndentity: true, // 不发送 CLIENT SETINFO
+		Protocol:         config.Protocol,         // 不尝试 HELLO，直接用 RESP2
+		DisableIndentity: config.DisableIndentity, // 不发送 CLIENT SETINFO
 	}
 
 	// 创建Redis客户端
