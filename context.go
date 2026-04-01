@@ -159,6 +159,10 @@ type Context interface {
 	// JWT相关方法
 	StoreJwtClaim(claim IJwtClaim) // 存储JWT声明，用于身份验证
 	JwtClaim() (claim IJwtClaim)   // 获取JWT声明，用于身份验证
+
+	// 数据库支持
+	WithDBHandle(handle func(name string) any)
+	DB(name string) any
 }
 
 // 确保DefaultContext实现了Context接口
@@ -188,6 +192,7 @@ func NewContext(endpoint Endpoint, path string) Context {
 		ctxInternal: context.Background(),
 		Header:      header,
 		logger:      _loggerManager.Receive(string(endpoint)),
+		_db:         &ContextDB{},
 	}
 }
 
@@ -231,6 +236,8 @@ type DefaultContext struct {
 	logger ILogger // 日志记录器
 	abort  int32   // 使用原子操作保护，1表示已中止，0表示未中止
 	errors error
+
+	_db *ContextDB
 }
 
 func (d *DefaultContext) BindErrorInfo(err error) {
@@ -283,6 +290,7 @@ func (d *DefaultContext) WithTimeout(duration time.Duration) (timeoutCtx Context
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
+		_db:         d._db,
 	}, cancel
 }
 
@@ -318,6 +326,7 @@ func (d *DefaultContext) WithValue(key, val any) Context {
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
+		_db:         d._db,
 	}
 }
 
@@ -504,6 +513,7 @@ func (d *DefaultContext) Clone() Context {
 		ctxInternal: context.Background(),
 		Header:      d.Header.Clone(),
 		logger:      d.logger,
+		_db:         d._db,
 	}
 }
 
@@ -595,6 +605,7 @@ func (d *DefaultContext) WithDeadline(deadline time.Time) (deadlineCtx Context, 
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
+		_db:         d._db,
 	}, cancel
 }
 
@@ -615,6 +626,7 @@ func (d *DefaultContext) WithCancel() (cancelCtx Context, cancel context.CancelF
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
+		_db:         d._db,
 	}, cancel
 }
 
@@ -636,6 +648,7 @@ func (d *DefaultContext) WithCancelCause() (cancelCtx Context, cancel context.Ca
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
+		_db:         d._db,
 	}, cancel
 }
 
@@ -648,4 +661,36 @@ func (d *DefaultContext) WithCancelCause() (cancelCtx Context, cancel context.Ca
 //   - 直接委托给标准库的context.Cause函数处理内部上下文
 func (d *DefaultContext) Cause() error {
 	return context.Cause(d.ctxInternal)
+}
+
+func (c *DefaultContext) WithDBHandle(handle func(name string) any) {
+	c._db.WithDBHandle(handle)
+}
+
+func (c *DefaultContext) DB(name string) any {
+	return c._db.DB(name)
+}
+
+type ContextDB struct {
+	_db sync.Map
+
+	_handle func(name string) any
+}
+
+func (c *ContextDB) WithDBHandle(handle func(name string) any) {
+	c._handle = handle
+}
+
+func (c *ContextDB) DB(name string) any {
+	if c._handle == nil {
+		return nil
+	}
+
+	if v, ok := c._db.Load(name); ok {
+		return v
+	}
+
+	db := c._handle(name)
+	actual, _ := c._db.LoadOrStore(name, db)
+	return actual
 }
