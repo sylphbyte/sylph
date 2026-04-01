@@ -161,8 +161,8 @@ type Context interface {
 	JwtClaim() (claim IJwtClaim)   // 获取JWT声明，用于身份验证
 
 	// 数据库支持
-	WithDBHandle(handle func(name string) any)
-	DB(name string) any
+	WithDBHandle(category string, handle func(name string) any)
+	DB(category, name string) any
 }
 
 // 确保DefaultContext实现了Context接口
@@ -663,34 +663,37 @@ func (d *DefaultContext) Cause() error {
 	return context.Cause(d.ctxInternal)
 }
 
-func (c *DefaultContext) WithDBHandle(handle func(name string) any) {
-	c._db.WithDBHandle(handle)
+func (c *DefaultContext) WithDBHandle(category string, handle func(name string) any) {
+	c._db.WithDBHandle(category, handle)
 }
 
-func (c *DefaultContext) DB(name string) any {
-	return c._db.DB(name)
+func (c *DefaultContext) DB(category, name string) any {
+	return c._db.DB(category, name)
 }
 
 type ContextDB struct {
 	_db sync.Map
 
-	_handle func(name string) any
+	_handle sync.Map
 }
 
-func (c *ContextDB) WithDBHandle(handle func(name string) any) {
-	c._handle = handle
+func (c *ContextDB) WithDBHandle(category string, handle func(name string) any) {
+	c._handle.Store(category, handle)
 }
 
-func (c *ContextDB) DB(name string) any {
-	if c._handle == nil {
+func (c *ContextDB) DB(category, name string) any {
+	handleAny, ok := c._handle.Load(category)
+	if !ok {
 		return nil
 	}
+
+	handle := handleAny.(func(name string) any)
 
 	if v, ok := c._db.Load(name); ok {
 		return v
 	}
 
-	db := c._handle(name)
+	db := handle(name)
 	actual, _ := c._db.LoadOrStore(name, db)
 	return actual
 }
