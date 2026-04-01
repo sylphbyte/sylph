@@ -161,14 +161,14 @@ type Context interface {
 	JwtClaim() (claim IJwtClaim)   // 获取JWT声明，用于身份验证
 
 	// 数据库支持
-	WithMysqlHandle(handle func(name string) any)
-	WithRedisHandle(handle func(name string) any)
-	Mysql(name string) any
-	Redis(name string) any
+	// WithMysqlHandle(handle func(name string) any)
+	// WithRedisHandle(handle func(name string) any)
+	// Mysql(name string) any
+	// Redis(name string) any
 
-	// 其他数据库支持
-	WithDBHandle(category string, handle func(name string) any)
-	DB(category, name string) any
+	// // 其他数据库支持
+	// WithDBHandle(category string, handle func(name string) any)
+	// DB(category, name string) any
 }
 
 // 确保DefaultContext实现了Context接口
@@ -198,7 +198,7 @@ func NewContext(endpoint Endpoint, path string) Context {
 		ctxInternal: context.Background(),
 		Header:      header,
 		logger:      _loggerManager.Receive(string(endpoint)),
-		_db:         &ContextDB{},
+		// _db:         &ContextDB{},
 	}
 }
 
@@ -243,7 +243,7 @@ type DefaultContext struct {
 	abort  int32   // 使用原子操作保护，1表示已中止，0表示未中止
 	errors error
 
-	_db *ContextDB
+	// _db *ContextDB
 }
 
 func (d *DefaultContext) BindErrorInfo(err error) {
@@ -296,7 +296,7 @@ func (d *DefaultContext) WithTimeout(duration time.Duration) (timeoutCtx Context
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}, cancel
 }
 
@@ -332,7 +332,7 @@ func (d *DefaultContext) WithValue(key, val any) Context {
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}
 }
 
@@ -519,7 +519,7 @@ func (d *DefaultContext) Clone() Context {
 		ctxInternal: context.Background(),
 		Header:      d.Header.Clone(),
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}
 }
 
@@ -611,7 +611,7 @@ func (d *DefaultContext) WithDeadline(deadline time.Time) (deadlineCtx Context, 
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}, cancel
 }
 
@@ -632,7 +632,7 @@ func (d *DefaultContext) WithCancel() (cancelCtx Context, cancel context.CancelF
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}, cancel
 }
 
@@ -654,7 +654,7 @@ func (d *DefaultContext) WithCancelCause() (cancelCtx Context, cancel context.Ca
 		Header:      d.Header,
 		Marks:       d.Marks,
 		logger:      d.logger,
-		_db:         d._db,
+		// _db:         d._db,
 	}, cancel
 }
 
@@ -669,58 +669,62 @@ func (d *DefaultContext) Cause() error {
 	return context.Cause(d.ctxInternal)
 }
 
-func (c *DefaultContext) WithMysqlHandle(handle func(name string) any) {
-	c.WithDBHandle(dbMysqlMark, handle)
-}
+// func (c *DefaultContext) WithMysqlHandle(handle func(name string) any) {
+// 	c.WithDBHandle(dbMysqlMark, handle)
+// }
 
-func (c *DefaultContext) WithRedisHandle(handle func(name string) any) {
-	c.WithDBHandle(dbRedisMark, handle)
-}
+// func (c *DefaultContext) Mysql(name string) any {
+// 	return c.DB(dbMysqlMark, name)
+// }
 
-func (c *DefaultContext) Mysql(name string) any {
-	return c.DB(dbMysqlMark, name)
-}
+// func (c *DefaultContext) WithRedisHandle(handle func(name string) any) {
+// 	c.WithDBHandle(dbRedisMark, handle)
+// }
 
-func (c *DefaultContext) Redis(name string) any {
-	return c.DB(dbRedisMark, name)
-}
+// func (c *DefaultContext) Redis(name string) any {
+// 	return c.DB(dbRedisMark, name)
+// }
 
-func (c *DefaultContext) WithDBHandle(category string, handle func(name string) any) {
-	c._db.WithDBHandle(category, handle)
-}
+// func (c *DefaultContext) WithDBHandle(category string, handle func(name string) any) {
+// 	c._db.WithDBHandle(category, handle)
+// }
 
-func (c *DefaultContext) DB(category, name string) any {
-	return c._db.DB(category, name)
-}
+// func (c *DefaultContext) DB(category, name string) any {
+// 	return c._db.DB(category, name)
+// }
 
 const (
 	dbMysqlMark = "mysql"
 	dbRedisMark = "redis"
 )
 
-type ContextDB struct {
-	_db sync.Map
+// type ContextDB struct {
+// 	_db     sync.Map
+// 	_handle sync.Map
+// }
 
-	_handle sync.Map
-}
+// func (c *ContextDB) WithDBHandle(category string, handle func(name string) any) {
+// 	c._handle.Store(category, handle)
+// }
 
-func (c *ContextDB) WithDBHandle(category string, handle func(name string) any) {
-	c._handle.Store(category, handle)
-}
+// func (c *ContextDB) DB(category, name string) any {
+// 	handleAny, ok := c._handle.Load(category)
+// 	if !ok {
+// 		return nil
+// 	}
 
-func (c *ContextDB) DB(category, name string) any {
-	handleAny, ok := c._handle.Load(category)
-	if !ok {
-		return nil
-	}
+// 	handle := handleAny.(func(name string) any)
 
-	handle := handleAny.(func(name string) any)
+// 	key := c.makeLoadKey(category, name)
+// 	if v, ok := c._db.Load(key); ok {
+// 		return v
+// 	}
 
-	if v, ok := c._db.Load(name); ok {
-		return v
-	}
+// 	db := handle(name)
+// 	actual, _ := c._db.LoadOrStore(key, db)
+// 	return actual
+// }
 
-	db := handle(name)
-	actual, _ := c._db.LoadOrStore(name, db)
-	return actual
-}
+// func (c *ContextDB) makeLoadKey(category, name string) string {
+// 	return category + ":" + name
+// }
