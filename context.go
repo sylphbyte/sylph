@@ -161,6 +161,12 @@ type Context interface {
 	JwtClaim() (claim IJwtClaim)   // 获取JWT声明，用于身份验证
 
 	// 数据库支持
+	WithMysqlHandle(handle func(name string) any)
+	WithRedisHandle(handle func(name string) any)
+	Mysql(name string) any
+	Redis(name string) any
+
+	// 其他数据库支持
 	WithDBHandle(category string, handle func(name string) any)
 	DB(category, name string) any
 }
@@ -663,6 +669,22 @@ func (d *DefaultContext) Cause() error {
 	return context.Cause(d.ctxInternal)
 }
 
+func (c *DefaultContext) WithMysqlHandle(handle func(name string) any) {
+	c.WithDBHandle(dbMysqlMark, handle)
+}
+
+func (c *DefaultContext) WithRedisHandle(handle func(name string) any) {
+	c.WithDBHandle(dbRedisMark, handle)
+}
+
+func (c *DefaultContext) Mysql(name string) any {
+	return c.DB(dbMysqlMark, name)
+}
+
+func (c *DefaultContext) Redis(name string) any {
+	return c.DB(dbRedisMark, name)
+}
+
 func (c *DefaultContext) WithDBHandle(category string, handle func(name string) any) {
 	c._db.WithDBHandle(category, handle)
 }
@@ -670,6 +692,11 @@ func (c *DefaultContext) WithDBHandle(category string, handle func(name string) 
 func (c *DefaultContext) DB(category, name string) any {
 	return c._db.DB(category, name)
 }
+
+const (
+	dbMysqlMark = "mysql"
+	dbRedisMark = "redis"
+)
 
 type ContextDB struct {
 	_db sync.Map
